@@ -12,6 +12,7 @@ library(shiny)
 library(leaflet)
 library(sf)
 library(glue)
+library(httr2)
 
 UTILISATEUR_GH <- "Cammbrnd"
 REPO_GH        <- "phenips_test"
@@ -36,7 +37,19 @@ ui <- fluidPage(
 server <- function(input, output, session) {
 
   lire_geojson_securise <- function(url) {
-    tryCatch(sf::st_read(url, quiet = TRUE), error = function(e) NULL)
+    tryCatch({
+      # On telecharge via httr2 (pile TLS distincte de celle de GDAL) puis on
+      # lit le fichier en local. Evite l'erreur "schannel: CertGetCertificateChain
+      # trust error" que GDAL peut declencher sur certains postes Windows
+      # (proxy/antivirus qui intercepte le SSL) quand on lui passe l'URL directement.
+      fichier_tmp <- tempfile(fileext = ".geojson")
+      request(url) |>
+        req_perform(path = fichier_tmp)
+      sf::st_read(fichier_tmp, quiet = TRUE)
+    }, error = function(e) {
+      message("Erreur lecture GeoJSON (", url, "): ", conditionMessage(e))
+      NULL
+    })
   }
 
   gen   <- reactive({ lire_geojson_securise(URL_GEN) })
@@ -73,15 +86,36 @@ server <- function(input, output, session) {
   observe({
     o <- onset()
     if (is.null(o) || nrow(o) == 0) return(invisible(NULL))
+
+    # Palette continue sur la date (date_iso -> Date), du plus precoce (clair)
+    # au plus tardif (fonce). "YlOrRd" va du jaune (tot) au rouge fonce (tard).
+    dates_num <- as.Date(o$date_iso)
+    pal_onset <- colorNumeric(
+      palette = "YlOrRd",
+      domain  = dates_num,
+      na.color = "#cccccc"
+    )
+
     leafletProxy("carte") |>
       clearGroup("onset") |>
+      removeControl("legende_onset") |>
       addPolygons(
         data        = o,
+        fillColor   = ~pal_onset(as.Date(date_iso)),
         color       = "#333333",
         weight      = 0.5,
-        fillOpacity = 0.5,
+        fillOpacity = 0.75,
         group       = "Onset (1er essaimage)",
         label       = ~date_onset
+      ) |>
+      addLegend(
+        position = "bottomright",
+        pal      = pal_onset,
+        values   = dates_num,
+        title    = "1er essaimage",
+        labFormat = labelFormat(date = TRUE),
+        layerId  = "legende_onset",
+        group    = "Onset (1er essaimage)"
       )
   })
 
