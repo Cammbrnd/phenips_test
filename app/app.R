@@ -13,8 +13,8 @@ library(leaflet)
 library(sf)
 library(glue)
 
-UTILISATEUR_GH <- "<TON_USER>"
-REPO_GH        <- "<TON_REPO>"
+UTILISATEUR_GH <- "Cammbrnd"
+REPO_GH        <- "phenips_test"
 BRANCHE_GH     <- "main"
 
 url_geojson <- function(nom_fichier) {
