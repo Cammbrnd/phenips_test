@@ -1,0 +1,72 @@
+name: Mise a jour PHENIPS (GeoJSON)
+
+on:
+  schedule:
+    # Tous les lundis a 05h00 UTC (~06h00/07h00 heure de Paris selon saison)
+    # SAFRAN se met a jour environ une fois par mois : un cron hebdomadaire
+    # suffit largement, un cron quotidien ne trouverait rien de neuf.
+    - cron: "0 5 * * 1"
+  workflow_dispatch: {}   # lancement manuel depuis l'onglet Actions > Run workflow
+
+permissions:
+  contents: write   # necessaire pour que le job puisse commit/push les GeoJSON
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90   # marge large : le modele PHENIPS France entiere peut prendre 15-30 min
+
+    steps:
+      - name: Cloner le depot
+        uses: actions/checkout@v4
+
+      - name: Installer les librairies systeme (GDAL / GEOS / PROJ / UDUNITS)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgdal-dev libgeos-dev libproj-dev libudunits2-dev \
+            gdal-bin
+
+      - name: Installer R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.4"
+          use-public-rspm: true   # active les binaires precompiles Posit -> install bien plus rapide
+
+      - name: Cache des packages R
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.R_LIBS_USER }}
+          key: r-pkgs-${{ runner.os }}-${{ hashFiles('R/pipeline_geojson.R') }}
+          restore-keys: |
+            r-pkgs-${{ runner.os }}-
+
+      - name: Installer les packages R
+        run: |
+          Rscript -e '
+            pkgs <- c("barrks","terra","httr2","ggplot2","tidyterra","lubridate",
+                      "glue","sf","scales","data.table","dplyr")
+            manquants <- pkgs[!pkgs %in% rownames(installed.packages())]
+            if (length(manquants) > 0) {
+              install.packages(manquants, repos = "https://cloud.r-project.org")
+            }
+          '
+
+      - name: Cache SAFRAN (evite de tout retelecharger a chaque run)
+        uses: actions/cache@v4
+        with:
+          path: data/cache_safran
+          key: safran-cache-${{ github.run_id }}
+          restore-keys: |
+            safran-cache-
+
+      - name: Lancer le pipeline (GeoJSON uniquement)
+        run: Rscript R/pipeline_geojson.R
+
+      - name: Publier les GeoJSON produits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/*.geojson
+          git diff --cached --quiet && echo "Rien de nouveau a publier" || git commit -m "MAJ PHENIPS $(date -u +%Y-%m-%d)"
+          git push
