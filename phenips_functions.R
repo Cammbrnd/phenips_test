@@ -108,7 +108,7 @@ WHm2_FACTOR <- 10000 / 3600   # J/cm2 -> Wh/m2 = 2.7778
 SSI_CHECK_MAX <- 4000   # J/cm2 — au-dessus = unite suspecte
 
 # --- Repertoires ---
-DIR_OUT   <- "output_phenips_france"
+DIR_OUT   <- "data"
 DIR_CACHE <- file.path(DIR_OUT, "cache_safran")
 dir.create(DIR_OUT,   showWarnings = FALSE, recursive = TRUE)
 dir.create(DIR_CACHE, showWarnings = FALSE, recursive = TRUE)
