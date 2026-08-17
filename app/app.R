@@ -1,11 +1,18 @@
 # =============================================================================
-# App Shiny PHENIPS-Clim — visualisation seule
+# App Shiny multi-modeles — visualisation seule
 # -----------------------------------------------------------------------------
-# Ne fait AUCUN calcul : lit les deux GeoJSON publies par GitHub Actions
-# et les affiche sur une carte leaflet. Prevu pour shinyapps.io (plan gratuit).
+# Ne fait AUCUN calcul : lit les GeoJSON publies par GitHub Actions et les
+# affiche sur une carte leaflet, avec un selecteur pour changer de modele.
 #
-# A FAIRE avant deploiement : remplacer <TON_USER>/<TON_REPO> ci-dessous
-# par le nom de ton depot GitHub (branche par defaut = main, a adapter si besoin).
+# Chaque modele exporte deja son propre champ "couleur" (calcule cote R au
+# moment de l'export, dans xxx_functions.R) : l'app se contente de l'utiliser
+# tel quel, sans reconstruire de palette. Ca garantit que la carte QGIS, la
+# carte Shiny et n'importe quel autre client qui lit ces GeoJSON affichent
+# exactement les memes couleurs.
+#
+# Exception : l'onset PHENIPS (date continue) n'a pas de champ "couleur"
+# pre-calcule (une palette discrete ne rendrait pas justice a un degrade
+# continu) -> degrade colorNumeric() calcule ici, cote client.
 # =============================================================================
 
 library(shiny)
@@ -22,29 +29,68 @@ url_geojson <- function(nom_fichier) {
   glue("https://raw.githubusercontent.com/{UTILISATEUR_GH}/{REPO_GH}/{BRANCHE_GH}/data/{nom_fichier}")
 }
 
-URL_GEN   <- url_geojson("phenips_generations_latest.geojson")
-URL_ONSET <- url_geojson("phenips_onset_latest.geojson")
+# --- Definition des 4 modeles : nom affiche, fichiers "latest", champ label ---
+MODELES <- list(
+  phenips = list(
+    label        = "PHENIPS-Clim (Ips typographus)",
+    fichier_1    = "phenips_generations_latest.geojson",
+    fichier_2    = "phenips_onset_latest.geojson",
+    nom_couche_1 = "Generations",
+    nom_couche_2 = "Onset (1er essaimage)",
+    champ_label_1 = "label",
+    champ_label_2 = "date_onset"
+  ),
+  chapy = list(
+    label        = "CHAPY (Pityogenes chalcographus)",
+    fichier_1    = "chapy_generations_latest.geojson",
+    fichier_2    = "chapy_envol_latest.geojson",
+    nom_couche_1 = "Generations",
+    nom_couche_2 = "Envol",
+    champ_label_1 = "label",
+    champ_label_2 = "label"
+  ),
+  steno = list(
+    label        = "STENO-DJ (Ips sexdentatus)",
+    fichier_1    = "steno_generations_latest.geojson",
+    fichier_2    = "steno_essaimage_latest.geojson",
+    nom_couche_1 = "Generations",
+    nom_couche_2 = "Essaimage",
+    champ_label_1 = "libelle",
+    champ_label_2 = "libelle"
+  ),
+  monochamus = list(
+    label        = "Monochamus galloprovincialis (bivolt. A + B)",
+    fichier_1    = "mono_stade_latest.geojson",
+    fichier_2    = "mono_bivoltB_gen2_latest.geojson",
+    nom_couche_1 = "Stade + bivoltisme A",
+    nom_couche_2 = "Bivoltisme B (gen2)",
+    champ_label_1 = "label",
+    champ_label_2 = "label"
+  )
+)
 
 ui <- fluidPage(
-  titlePanel("PHENIPS-Clim — France metropolitaine"),
-  div(
-    style = "margin-bottom: 10px; color: #666; font-size: 13px;",
-    textOutput("statut", inline = TRUE)
+  titlePanel("Phenologie forestiere — France metropolitaine"),
+  fluidRow(
+    column(4,
+      selectInput("modele", "Modele",
+                  choices  = setNames(names(MODELES), sapply(MODELES, `[[`, "label")),
+                  selected = "phenips")
+    ),
+    column(8,
+      div(style = "margin-top: 25px; color: #666; font-size: 13px;",
+          textOutput("statut", inline = TRUE))
+    )
   ),
-  leafletOutput("carte", height = "82vh")
+  leafletOutput("carte", height = "78vh")
 )
 
 server <- function(input, output, session) {
 
   lire_geojson_securise <- function(url) {
     tryCatch({
-      # On telecharge via httr2 (pile TLS distincte de celle de GDAL) puis on
-      # lit le fichier en local. Evite l'erreur "schannel: CertGetCertificateChain
-      # trust error" que GDAL peut declencher sur certains postes Windows
-      # (proxy/antivirus qui intercepte le SSL) quand on lui passe l'URL directement.
       fichier_tmp <- tempfile(fileext = ".geojson")
-      request(url) |>
-        req_perform(path = fichier_tmp)
+      request(url) |> req_perform(path = fichier_tmp)
       sf::st_read(fichier_tmp, quiet = TRUE)
     }, error = function(e) {
       message("Erreur lecture GeoJSON (", url, "): ", conditionMessage(e))
@@ -52,13 +98,33 @@ server <- function(input, output, session) {
     })
   }
 
-  gen   <- reactive({ lire_geojson_securise(URL_GEN) })
-  onset <- reactive({ lire_geojson_securise(URL_ONSET) })
+  # Cache en memoire : evite de retelecharger si l'utilisateur revient sur
+  # un modele deja consulte dans la meme session.
+  cache_geojson <- reactiveValues()
+
+  charger_couche <- function(cle_modele, suffixe, nom_fichier) {
+    cle <- paste0(cle_modele, "_", suffixe)
+    if (is.null(cache_geojson[[cle]])) {
+      cache_geojson[[cle]] <- lire_geojson_securise(url_geojson(nom_fichier))
+    }
+    cache_geojson[[cle]]
+  }
+
+  couche1 <- reactive({
+    m <- MODELES[[input$modele]]
+    charger_couche(input$modele, "1", m$fichier_1)
+  })
+
+  couche2 <- reactive({
+    m <- MODELES[[input$modele]]
+    charger_couche(input$modele, "2", m$fichier_2)
+  })
 
   output$statut <- renderText({
-    n_gen   <- if (is.null(gen()))   0 else nrow(gen())
-    n_onset <- if (is.null(onset())) 0 else nrow(onset())
-    glue("{n_gen} polygones generations | {n_onset} polygones onset")
+    m  <- MODELES[[input$modele]]
+    n1 <- if (is.null(couche1())) 0 else nrow(couche1())
+    n2 <- if (is.null(couche2())) 0 else nrow(couche2())
+    glue("{m$label} — {n1} polygones ({m$nom_couche_1}) | {n2} polygones ({m$nom_couche_2})")
   })
 
   output$carte <- renderLeaflet({
@@ -67,62 +133,67 @@ server <- function(input, output, session) {
       setView(lng = 2.5, lat = 46.5, zoom = 6)
   })
 
+  # --- Couche 1 : toujours un champ "couleur" pre-calcule cote export R ---
   observe({
-    g <- gen()
+    m <- MODELES[[input$modele]]
+    g <- couche1()
     if (is.null(g) || nrow(g) == 0) return(invisible(NULL))
+
+    couleurs <- if ("couleur" %in% names(g)) g$couleur else "#31688E"
+    labels_1 <- if (m$champ_label_1 %in% names(g)) g[[m$champ_label_1]] else NULL
+
     leafletProxy("carte") |>
-      clearGroup("generations") |>
+      clearGroup(m$nom_couche_1) |>
       addPolygons(
-        data        = g,
-        fillColor   = ~couleur,
-        color       = "#333333",
-        weight      = 0.5,
-        fillOpacity = 0.65,
-        group       = "Generations",
-        label       = ~label
+        data = g, fillColor = couleurs, color = "#333333", weight = 0.5,
+        fillOpacity = 0.65, group = m$nom_couche_1, label = labels_1
       )
   })
 
+  # --- Couche 2 : champ "couleur" pre-calcule, SAUF onset PHENIPS
+  #     (date_iso continue -> degrade colorNumeric cote client) ---
   observe({
-    o <- onset()
+    m <- MODELES[[input$modele]]
+    o <- couche2()
     if (is.null(o) || nrow(o) == 0) return(invisible(NULL))
 
-    # Palette continue sur la date (date_iso -> Date), du plus precoce (clair)
-    # au plus tardif (fonce). "YlOrRd" va du jaune (tot) au rouge fonce (tard).
-    dates_num <- as.Date(o$date_iso)
-    pal_onset <- colorNumeric(
-      palette = "YlOrRd",
-      domain  = dates_num,
-      na.color = "#cccccc"
-    )
+    labels_2 <- if (m$champ_label_2 %in% names(o)) o[[m$champ_label_2]] else NULL
 
-    leafletProxy("carte") |>
-      clearGroup("onset") |>
-      removeControl("legende_onset") |>
-      addPolygons(
-        data        = o,
-        fillColor   = ~pal_onset(as.Date(date_iso)),
-        color       = "#333333",
-        weight      = 0.5,
-        fillOpacity = 0.75,
-        group       = "Onset (1er essaimage)",
-        label       = ~date_onset
-      ) |>
-      addLegend(
-        position = "bottomright",
-        pal      = pal_onset,
-        values   = dates_num,
-        title    = "1er essaimage",
-        labFormat = labelFormat(date = TRUE),
-        layerId  = "legende_onset",
-        group    = "Onset (1er essaimage)"
-      )
+    if ("date_iso" %in% names(o)) {
+      dates_num <- as.Date(o$date_iso)
+      pal_onset <- colorNumeric("YlOrRd", domain = dates_num, na.color = "#cccccc")
+      leafletProxy("carte") |>
+        clearGroup(m$nom_couche_2) |>
+        removeControl("legende_couche2") |>
+        addPolygons(
+          data = o, fillColor = ~pal_onset(as.Date(date_iso)), color = "#333333",
+          weight = 0.5, fillOpacity = 0.75, group = m$nom_couche_2, label = labels_2
+        ) |>
+        addLegend(position = "bottomright", pal = pal_onset, values = dates_num,
+                  title = "1er essaimage", labFormat = labelFormat(date = TRUE),
+                  layerId = "legende_couche2", group = m$nom_couche_2)
+    } else {
+      couleurs <- if ("couleur" %in% names(o)) o$couleur else "#31688E"
+      leafletProxy("carte") |>
+        clearGroup(m$nom_couche_2) |>
+        removeControl("legende_couche2") |>
+        addPolygons(
+          data = o, fillColor = couleurs, color = "#333333", weight = 0.5,
+          fillOpacity = 0.65, group = m$nom_couche_2, label = labels_2
+        )
+    }
   })
 
   observe({
+    m <- MODELES[[input$modele]]
+    autres_groupes <- setdiff(
+      unlist(lapply(MODELES, function(x) c(x$nom_couche_1, x$nom_couche_2))),
+      c(m$nom_couche_1, m$nom_couche_2)
+    )
     leafletProxy("carte") |>
+      clearGroup(autres_groupes) |>
       addLayersControl(
-        overlayGroups = c("Generations", "Onset (1er essaimage)"),
+        overlayGroups = c(m$nom_couche_1, m$nom_couche_2),
         options       = layersControlOptions(collapsed = FALSE)
       )
   })
