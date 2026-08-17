@@ -27,6 +27,6 @@ copier_vers_nom_stable <- function(pattern, nom_stable) {
   cat(glue::glue("  Copie stable : {basename(plus_recent)} -> {nom_stable}\n"))
 }
 copier_vers_nom_stable("^chapy_generations_.*\\.geojson$", "chapy_generations_latest.geojson")
-copier_vers_nom_stable("^chapy_.*envol.*\\.geojson$",      "chapy_envol_latest.geojson")
+copier_vers_nom_stable("^chapy_onset_.*\\.geojson$",        "chapy_onset_latest.geojson")
 
 cat("\n>> CHAPY termine.\n\n")
