@@ -160,17 +160,28 @@ server <- function(input, output, session) {
     labels_2 <- if (m$champ_label_2 %in% names(o)) o[[m$champ_label_2]] else NULL
 
     if ("date_iso" %in% names(o)) {
-      dates_num <- as.Date(o$date_iso)
+      # IMPORTANT : addLegend() plante si on lui passe des objets Date
+      # directement (bug connu : une division interne produit un difftime,
+      # que R refuse comme diviseur). On travaille donc en nombre de jours
+      # depuis epoch (1970-01-01), et labelFormat(date=TRUE) se charge de
+      # reconvertir en date lisible pour l'affichage de la legende.
+      dates_num <- as.numeric(as.Date(o$date_iso))
       pal_onset <- colorNumeric("YlOrRd", domain = dates_num, na.color = "#cccccc")
+      # labelFormat() du package leaflet n'a pas de parametre "date" : on
+      # ecrit notre propre fonction de formatage pour reconvertir les jours
+      # depuis epoch (1970-01-01) en date lisible jj/mm dans la legende.
+      labFormat_date <- function(type, cuts, p) {
+        format(as.Date(cuts, origin = "1970-01-01"), "%d/%m")
+      }
       leafletProxy("carte") |>
         clearGroup(m$nom_couche_2) |>
         removeControl("legende_couche2") |>
         addPolygons(
-          data = o, fillColor = ~pal_onset(as.Date(date_iso)), color = "#333333",
+          data = o, fillColor = ~pal_onset(as.numeric(as.Date(date_iso))), color = "#333333",
           weight = 0.5, fillOpacity = 0.75, group = m$nom_couche_2, label = labels_2
         ) |>
         addLegend(position = "bottomright", pal = pal_onset, values = dates_num,
-                  title = "1er essaimage", labFormat = labelFormat(date = TRUE),
+                  title = "1er essaimage", labFormat = labFormat_date,
                   layerId = "legende_couche2", group = m$nom_couche_2)
     } else {
       couleurs <- if ("couleur" %in% names(o)) o$couleur else "#31688E"
