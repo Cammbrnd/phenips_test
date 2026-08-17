@@ -43,9 +43,9 @@ MODELES <- list(
   chapy = list(
     label        = "CHAPY (Pityogenes chalcographus)",
     fichier_1    = "chapy_generations_latest.geojson",
-    fichier_2    = "chapy_envol_latest.geojson",
+    fichier_2    = "chapy_onset_latest.geojson",
     nom_couche_1 = "Generations",
-    nom_couche_2 = "Envol",
+    nom_couche_2 = "Premier envol",
     champ_label_1 = "label",
     champ_label_2 = "label"
   ),
