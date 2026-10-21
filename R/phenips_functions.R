@@ -225,10 +225,13 @@ modeliser_phenips <- function(meteo,
 # =============================================================================
 
 #' Raster -> polygones dissous (WGS84), premiere colonne renommee `nom_champ`.
+#' [v3] On vectorise sur la grille native (L93, mailles de 8 km) PUIS on reprojette les
+#' polygones. L'ancienne methode (reprojection du raster en WGS84 par plus proche voisin,
+#' puis vectorisation) decalait les bords de maille de plusieurs km : invisible sur une
+#' carte pleine, mais elle deformait les mailles isolees des cartes masquees par essence.
 vectoriser_raster <- function(rst, nom_champ) {
-  rst_wgs <- project(rst, "EPSG:4326", method = "near")
   v <- tryCatch(
-    as.polygons(rst_wgs, dissolve = TRUE) |> st_as_sf(),
+    as.polygons(rst, dissolve = TRUE) |> st_as_sf() |> st_transform(4326),
     error = function(e) { message("::warning::PHENIPS vectorisation : ", conditionMessage(e)); NULL }
   )
   if (is.null(v) || nrow(v) == 0) return(NULL)
