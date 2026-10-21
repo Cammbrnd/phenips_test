@@ -1,0 +1,24 @@
+{
+  "source": "IGN - BD Foret V2 (LANDCOVER.FORESTINVENTORY.V2:formation_vegetale), champ essence",
+  "grille": {
+    "res_m": 8000,
+    "crs": "EPSG:2154",
+    "xmin": 100000,
+    "ymin": 6050000
+  },
+  "date_construction": "2026-10-21",
+  "masques": [
+    {
+      "nom": "epicea",
+      "n_mailles": 3389,
+      "n_polygones": 33341,
+      "filtre": "essence LIKE 'Sapin,%'"
+    },
+    {
+      "nom": "pin",
+      "n_mailles": 6355,
+      "n_polygones": 108391,
+      "filtre": "essence LIKE 'Pin%'"
+    }
+  ]
+}
