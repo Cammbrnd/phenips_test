@@ -1,0 +1,76 @@
+GetCapabilities : HTTP 200 | 5569414 caracteres
+Couches contenant FOREST/FORET (28) :
+   IGNF_ACCESSIBILITE-PHYSIQUE-FORETS-:acces_porteur
+   IGNF_ACCESSIBILITE-PHYSIQUE-FORETS-MASQUE-FORETV3:acces_porteur
+   IGNF_ACCESSIBILITE-PHYSIQUE-FORETS-:acces_skidder
+   IGNF_ACCESSIBILITE-PHYSIQUE-FORETS-MASQUE-FORETV3:acces_skidder
+   LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape
+   LANDCOVER.FORESTINVENTORY.V2:formation_vegetale
+   BDFORETV1_BDD_FXX_LAMB93_20140403:resu_bdv1_shape
+   BDTOPO_V3:foret_publique
+   NAVIFOREST_PUBLIC:itineraires-bois-ronds
+   monterritoire_gpkg_29-07-2025_wfs:forets_de_mon_territoire
+   IGNF_MASQUE-FORET.2021-2023:masque_foret
+   IGNF_MASQUE-CARTO-FORMATIONS-VEGETALES:masque-foret_2004
+   IGNF_MASQUE-CARTO-FORMATIONS-VEGETALES:masque-foret_2010
+   IGNF_MASQUE-CARTO-FORMATIONS-VEGETALES:masque-foret_2016
+   IGNF_MASQUE-CARTO-FORMATIONS-VEGETALES:masque-foret_2017
+   IGNF_MASQUE-CARTO-FORMATIONS-VEGETALES:masque-foret_2022
+   IGNF_MASQUE-CARTO-FORMATIONS-VEGETALES:masque-foret_2023
+   IGNF_MASQUE-CARTO-FORMATIONS-VEGETALES:masque-foret_2024
+   ONF.FORETS_PUBLIQUES:ONF_FORETS_PUBLIQUES
+   ObsForets.Gestion:part_forets_publiques_dep_2017_2021
+   ObsForets.Sols:repartition_niveaux_trophiques_2018_2022
+   ObsForets.Sols:repartition_niveaux_trophiques_toutes_campagnes
+   ObsForets.Ressources.TxBoisement:taux_boisement_communal
+   ObsForets.Ressources.TxBoisement:taux_boisement_dep_2018_2022
+   ObsForets.Ressources:volume_moyen_ha_dep_2018_2022
+   ObsForets.Ressources:volume_sur_pied_dep_2017_2021
+   ObsForets.Ressources:volume_sur_pied_region_2017_2021
+   ZONES-A-PROSPECTER-FORETS-SUBNATURELLES:zones_a_prospecter_forets_subnaturelles
+
+=== LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shape ===
+Champs : dep (xsd:string), cycle (xsd:string), anref (xsd:string), tfifn (xsd:string), libelle (xsd:string), libelle2 (xsd:string), typn (xsd:string), nom_typn (xsd:string), geom (gml:MultiSurfacePropertyType), resu_bdv1_shape (LANDCOVER.FORESTINVENTORY.V1:resu_bdv1_shapeType)
+Exemple : HTTP 200
+  dep cycle anref tfifn                         libelle
+1  01     3  1992   WFH accrue ou peuplement hygrophile
+2  01     3  1992    P5             peupleraie cultivée
+3  01     3  1992    SF               boisement morcelé
+                         libelle2 typn                                 nom_typn
+1 ACCRUE OU PEUPLEMENT HYGROPHILE   30                            FORET OUVERTE
+2             PEUPLERAIE CULTIVEE   50                               PEUPLERAIE
+3               BOISEMENT MORCELE    4 MELANGE DE FUTAIE DE FEUILLUS ET TAILLIS
+
+=== LANDCOVER.FORESTINVENTORY.V2:formation_vegetale ===
+Champs : id (xsd:string), code_tfv (xsd:string), tfv (xsd:string), tfv_g11 (xsd:string), essence (xsd:string), geom (gml:MultiSurfacePropertyType), formation_vegetale (LANDCOVER.FORESTINVENTORY.V2:formation_vegetaleType)
+Exemple : HTTP 200
+                        id code_tfv                              tfv
+1 FORESTIE0000000008200001      FF0 Forêt fermée sans couvert arboré
+2 FORESTIE0000000008200002      FF0 Forêt fermée sans couvert arboré
+3 FORESTIE0000000008200003      FF0 Forêt fermée sans couvert arboré
+                           tfv_g11 essence
+1 Forêt fermée sans couvert arboré      NR
+2 Forêt fermée sans couvert arboré      NR
+3 Forêt fermée sans couvert arboré      NR
+
+=== Echantillon sur : LANDCOVER.FORESTINVENTORY.V2:formation_vegetale ===
+propertyName utilise : code_tfv,tfv,tfv_g11,essence,formation_vegetale
+  Vosges : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Jura : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Alpes_N : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Alpes_S : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Auvergne : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Morvan : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Landes : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Pyrenees : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Cevennes : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Ardennes : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Bretagne : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Limousin : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Vosges_nord : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Corse : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Sologne : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Provence : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Normandie : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  Vercors : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+Duree echantillon : 2 s
