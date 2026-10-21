@@ -17,7 +17,10 @@ concurrency:
 
 jobs:
   update:
-    runs-on: ubuntu-latest
+    # Image figee : "ubuntu-latest" bascule vers Ubuntu 26 (octobre 2026). Les packages R
+    # compiles (terra, sf) du cache sont lies aux bibliotheques systeme GDAL/PROJ de
+    # l'image qui les a produits ; changer d'image sans changer le cache les casse.
+    runs-on: ubuntu-24.04
     timeout-minutes: 180   # 4 modelisations + 1 telechargement partage (~121 requetes SAFRAN)
 
     env:
@@ -52,9 +55,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.R_LIBS_USER }}
-          key: r-pkgs-${{ runner.os }}-v2
+          key: r-pkgs-ubuntu2404-v3
           restore-keys: |
-            r-pkgs-${{ runner.os }}-
+            r-pkgs-ubuntu2404-
 
       - name: Installer les packages R (sans renv.lock, versions non figees)
         if: hashFiles('renv.lock') == ''
@@ -63,8 +66,15 @@ jobs:
           Rscript -e '
             pkgs <- c("barrks","terra","httr2","ggplot2","tidyterra","lubridate",
                       "glue","sf","scales","data.table","dplyr","jsonlite")
-            manquants <- pkgs[!pkgs %in% rownames(installed.packages())]
-            if (length(manquants) > 0) install.packages(manquants)
+            # requireNamespace() CHARGE vraiment le package (dyn.load) : un binaire en cache
+            # lie a d'anciennes bibliotheques systeme est detecte et reinstalle.
+            ok <- vapply(pkgs, function(p) suppressWarnings(requireNamespace(p, quietly = TRUE)), logical(1))
+            if (!all(ok)) {
+              cat("A (re)installer :", paste(pkgs[!ok], collapse = ", "), "\n")
+              install.packages(pkgs[!ok])
+            }
+            ok <- vapply(pkgs, function(p) suppressWarnings(requireNamespace(p, quietly = TRUE)), logical(1))
+            if (!all(ok)) stop("Packages inutilisables : ", paste(pkgs[!ok], collapse = ", "))
           '
 
       # [P4] Cle v2 : les anciens CSV (dalles de 50 km, sans marge) ne sont plus
