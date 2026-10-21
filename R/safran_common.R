@@ -10,6 +10,15 @@
 # (T_Q, TINF_H_Q, TSUP_H_Q, SSI_Q), meme pour les modeles qui n'utilisent pas
 # le rayonnement (Monochamus). Cela permet un cache 100% partage entre les
 # 4 pipelines : un seul jeu de requetes API GeoSAS pour tous les modeles.
+#
+# v2 (controle qualite de couverture) :
+#   - dalles de 100 km (et non 200) avec recouvrement de 16 km ;
+#   - bbox formatees sans notation scientifique ;
+#   - cache renomme (safran_v2_*) pour ne jamais relire un ancien fichier
+#     tronque ;
+#   - detection des colonnes/lignes de mailles manquantes, re-telechargement
+#     par bandes etroites, comblement limite (<= 2 mailles de large), puis
+#     ECHEC BRUYANT si des trous persistent (voir SAFRAN_QC_STRICT).
 # =============================================================================
 
 library(terra)
@@ -35,14 +44,32 @@ FRANCE_XMAX <- 1200000
 FRANCE_YMIN <- 6050000
 FRANCE_YMAX <- 7150000
 SAFRAN_RES  <- 8000
-DALLE_KM    <- 200
+DALLE_KM    <- 100                 # 200 avant la v2 : requetes plus petites
 DALLE_M     <- DALLE_KM * 1000
+MARGE_DALLE <- 2 * SAFRAN_RES      # recouvrement entre dalles voisines (16 km)
 CRS_L93 <- "EPSG:2154"
 CRS_WGS <- "EPSG:4326"
+
+# --- Controle qualite ---
+# TRUE (defaut) : le job ECHOUE si des mailles manquent ou si des dalles
+# restent en erreur. FALSE : simple avertissement (repli d'urgence, a poser
+# explicitement dans le workflow : SAFRAN_QC_STRICT: "false").
+SAFRAN_QC_STRICT <- !identical(tolower(Sys.getenv("SAFRAN_QC_STRICT", "true")), "false")
 
 # --- Repertoire de cache PARTAGE (un seul, pour les 4 modeles) ---
 DIR_CACHE <- "data/cache_safran"
 dir.create(DIR_CACHE, showWarnings = FALSE, recursive = TRUE)
+
+#' Signale un probleme de qualite : erreur si strict, avertissement sinon.
+#' Le prefixe ::error:: / ::warning:: cree une annotation dans GitHub Actions.
+echec_qc <- function(msg) {
+  if (SAFRAN_QC_STRICT) {
+    message("::error::", msg)
+    stop(msg, call. = FALSE)
+  }
+  message("::warning::", msg, " (SAFRAN_QC_STRICT=false : on continue)")
+  invisible(FALSE)
+}
 
 
 # =============================================================================
@@ -50,8 +77,10 @@ dir.create(DIR_CACHE, showWarnings = FALSE, recursive = TRUE)
 # =============================================================================
 
 creer_dalles <- function() {
-  xs <- seq(FRANCE_XMIN, FRANCE_XMAX, by = DALLE_M)
-  ys <- seq(FRANCE_YMIN, FRANCE_YMAX, by = DALLE_M)
+  # "- 1" : evite une dalle de largeur nulle quand l'emprise est un multiple
+  # exact de la taille de dalle (cas de 100 km).
+  xs <- seq(FRANCE_XMIN, FRANCE_XMAX - 1, by = DALLE_M)
+  ys <- seq(FRANCE_YMIN, FRANCE_YMAX - 1, by = DALLE_M)
   dalles      <- expand.grid(xmin = xs, ymin = ys)
   dalles$xmax <- pmin(dalles$xmin + DALLE_M, FRANCE_XMAX)
   dalles$ymax <- pmin(dalles$ymin + DALLE_M, FRANCE_YMAX)
@@ -73,11 +102,18 @@ RST_FRANCE <- creer_raster_france()
 
 
 # =============================================================================
-# TELECHARGEMENT + CACHE (identique aux 4 scripts d'origine)
+# TELECHARGEMENT + CACHE
 # =============================================================================
 
 chemin_cache <- function(dalle_id) {
-  file.path(DIR_CACHE, glue("safran_dalle{sprintf('%03d', dalle_id)}_{ANNEE}.csv"))
+  file.path(DIR_CACHE, glue("safran_v2_dalle{sprintf('%03d', dalle_id)}_{ANNEE}.csv"))
+}
+
+#' Fichiers de reparation (bandes etroites) : regeneres a chaque run, donc
+#' supprimes au debut de recuperer_safran() pour ne jamais relire un ancien.
+fichiers_patch <- function() {
+  list.files(DIR_CACHE, pattern = glue("^safran_v2_patch_.*_{ANNEE}\\.csv$"),
+             full.names = TRUE)
 }
 
 csv_cache_valide <- function(f) {
@@ -104,44 +140,100 @@ cache_est_valide <- function(dalle_id) {
   }, error = function(e) FALSE)
 }
 
-telecharger_dalle <- function(dalle, vars = GEOSAS_VARS,
-                              date_deb = DATE_DEB, date_fin = DATE_FIN_SAFRAN) {
-  bbox    <- glue("{dalle$xmin},{dalle$ymin},{dalle$xmax},{dalle$ymax}")
+#' Telecharge une bbox L93 vers un fichier CSV.
+#' Retourne list(statut, code) avec statut parmi :
+#'   "ok"     CSV valide ecrit dans `fichier`
+#'   "vide"   pas de donnees (HTTP 4xx, corps vide ou non CSV) : normal en mer
+#'   "erreur" panne reseau / timeout / HTTP 5xx / 429 apres les relances
+#' Un fichier ancien est supprime des que le statut n'est pas "ok" : on ne
+#' relit jamais silencieusement une version perimee.
+telecharger_bbox <- function(xmin, ymin, xmax, ymax, fichier,
+                             vars = GEOSAS_VARS,
+                             date_deb = DATE_DEB, date_fin = DATE_FIN_SAFRAN) {
+  # sprintf("%.0f") : jamais de notation scientifique ("5e+05") dans l'URL
+  bbox    <- sprintf("%.0f,%.0f,%.0f,%.0f", xmin, ymin, xmax, ymax)
   periode <- glue("{date_deb}/{date_fin}")
 
   req <- request(GEOSAS_URL) |>
     req_url_query(bbox = bbox, crs = GEOSAS_CRS, `parameter-name` = vars,
                   f = "CSV", datetime = periode) |>
     req_timeout(180) |>
+    req_error(is_error = \(resp) FALSE) |>      # on lit nous-memes le code HTTP
     req_retry(max_tries = 5, backoff = \(i) 30 * i,
               is_transient = \(resp) resp_status(resp) %in% c(429, 503, 504))
 
+  resultat <- function(statut, code = NA_integer_) {
+    if (statut != "ok" && file.exists(fichier)) file.remove(fichier)
+    list(statut = statut, code = code)
+  }
+
   resp <- tryCatch(req_perform(req), error = function(e) {
-    message("  ERREUR dalle ", dalle$id, ": ", e$message)
+    message("  ERREUR reseau/timeout (", bbox, ") : ", conditionMessage(e))
     NULL
   })
-  if (is.null(resp)) return(NULL)
-  if (resp_status(resp) != 200) {
-    message("  HTTP ", resp_status(resp), " dalle ", dalle$id)
-    return(NULL)
+  if (is.null(resp)) return(resultat("erreur"))
+
+  code <- resp_status(resp)
+  if (code >= 500 || code == 429) return(resultat("erreur", code))
+  if (code != 200)                return(resultat("vide", code))
+
+  corps <- resp_body_raw(resp)
+  if (length(corps) < 50) return(resultat("vide", code))
+  writeBin(corps, fichier)
+  if (!csv_cache_valide(fichier)) {
+    message("  reponse non CSV (", bbox, ") : ",
+            substr(paste(readLines(fichier, n = 1, warn = FALSE), collapse = ""), 1, 120))
+    return(resultat("vide", code))
   }
-  writeBin(resp_body_raw(resp), chemin_cache(dalle$id))
-  invisible(chemin_cache(dalle$id))
+  list(statut = "ok", code = code)
+}
+
+telecharger_dalle <- function(dalle) {
+  telecharger_bbox(dalle$xmin - MARGE_DALLE, dalle$ymin - MARGE_DALLE,
+                   dalle$xmax + MARGE_DALLE, dalle$ymax + MARGE_DALLE,
+                   chemin_cache(dalle$id))
 }
 
 recuperer_safran <- function(dalles = DALLES) {
   cat(glue(">> Telechargement SAFRAN partage ({DATE_DEB} -> {DATE_FIN_SAFRAN})...\n"))
+  cat(glue("   {nrow(dalles)} dalles de {DALLE_KM} km, recouvrement {MARGE_DALLE/1000} km\n"))
+  unlink(fichiers_patch())     # les reparations sont refaites a chaque run
   n <- nrow(dalles)
-  n_cache <- 0L; n_dl <- 0L; n_err <- 0L
+  n_cache <- 0L; n_dl <- 0L; n_vide <- 0L
+  ids_erreur <- integer(0)
   for (i in seq_len(n)) {
-    cat(glue("\r  Dalle {i}/{n} | cache={n_cache} dl={n_dl} err={n_err}  "))
+    cat(glue("\r  Dalle {i}/{n} | cache={n_cache} dl={n_dl} vides={n_vide} err={length(ids_erreur)}  "))
     d <- dalles[i, ]
     if (cache_est_valide(d$id)) { n_cache <- n_cache + 1L; next }
     res <- telecharger_dalle(d)
-    if (is.null(res)) n_err <- n_err + 1L else n_dl <- n_dl + 1L
+    if (res$statut == "ok") n_dl <- n_dl + 1L
+    else if (res$statut == "vide") n_vide <- n_vide + 1L
+    else ids_erreur <- c(ids_erreur, d$id)
     Sys.sleep(1.0)
   }
-  cat(glue("\n  Bilan : {n_cache} cache | {n_dl} telecharges | {n_err} erreurs\n\n"))
+  cat("\n")
+
+  # Une seconde chance pour les dalles en erreur (panne passagere de l'API)
+  if (length(ids_erreur) > 0) {
+    cat(glue("  {length(ids_erreur)} dalle(s) en erreur -> nouvelle tentative dans 60 s\n"))
+    Sys.sleep(60)
+    restantes <- integer(0)
+    for (id in ids_erreur) {
+      res <- telecharger_dalle(dalles[dalles$id == id, ])
+      if (res$statut == "ok") n_dl <- n_dl + 1L
+      else if (res$statut == "vide") n_vide <- n_vide + 1L
+      else restantes <- c(restantes, id)
+      Sys.sleep(1.0)
+    }
+    ids_erreur <- restantes
+  }
+
+  cat(glue("  Bilan : {n_cache} cache | {n_dl} telecharges | {n_vide} vides (mer/hors domaine) | {length(ids_erreur)} en erreur\n\n"))
+  if (length(ids_erreur) > 0) {
+    echec_qc(glue("{length(ids_erreur)} dalle(s) SAFRAN en erreur apres relance : ",
+                  "{paste(ids_erreur, collapse = ', ')}. Des mailles terrestres manquent probablement."))
+  }
+  invisible(list(n_cache = n_cache, n_dl = n_dl, n_vide = n_vide, ids_erreur = ids_erreur))
 }
 
 
@@ -151,7 +243,7 @@ recuperer_safran <- function(dalles = DALLES) {
 
 lire_cache_complet <- function(dalles = DALLES) {
   cat(">> Lecture du cache SAFRAN partage...\n")
-  fichiers <- chemin_cache(dalles$id)
+  fichiers <- c(chemin_cache(dalles$id), fichiers_patch())
   fichiers <- fichiers[file.exists(fichiers)]
   if (length(fichiers) == 0) stop("Aucun fichier cache. Lancer recuperer_safran() d'abord.")
 
@@ -205,6 +297,8 @@ lire_cache_complet <- function(dalles = DALLES) {
   dt <- rbindlist(liste, use.names = TRUE, fill = TRUE)
   dt[, date := as.Date(date)]
   dt <- dt[date >= DATE_DEB & date <= DATE_FIN_SAFRAN]
+  # Les dalles se recouvrent : un meme point peut apparaitre deux fois.
+  # unique() garde la premiere occurrence (les dalles precedent les patchs).
   dt <- unique(dt, by = c("date", "x", "y"))
 
   # Conversion rayonnement J/cm2 -> Wh/m2 (voir diagnostiquer_rayonnement() dans
@@ -214,6 +308,175 @@ lire_cache_complet <- function(dalles = DALLES) {
   cat(glue("  {nrow(dt)} lignes | {uniqueN(dt$date)} jours | ",
            "{uniqueN(interaction(dt$x, dt$y))} tuiles SAFRAN\n\n"))
   dt
+}
+
+
+# =============================================================================
+# CONTROLE QUALITE DE COUVERTURE
+# =============================================================================
+# Une maille est "manquante" si elle est vide alors que des mailles valides
+# l'encadrent a gauche ET a droite (ou en haut ET en bas) dans un rayon de K
+# mailles. Une ligne/colonne n'est signalee que si elle compte au moins
+# `seuil` mailles manquantes : les petits golfes et estuaires (quelques
+# mailles isolees) ne declenchent donc pas d'alerte.
+#
+# Fonction en R de base, sans dependance : testable hors pipeline.
+
+#' @param ok matrice logique (lignes = nord -> sud) : TRUE si la maille a des donnees
+trouver_trous_matrice <- function(ok, K = 3L, seuil = 8L) {
+  nr <- nrow(ok); nc <- ncol(ok)
+  # m_dec[i, j] = ok[i - dl, j - dc]  (hors grille : FALSE)
+  decaler <- function(dl, dc) {
+    out <- matrix(FALSE, nr, nc)
+    ii <- seq_len(nr) - dl; jj <- seq_len(nc) - dc
+    vi <- ii >= 1 & ii <= nr; vj <- jj >= 1 & jj <= nc
+    out[which(vi), which(vj)] <- ok[ii[vi], jj[vj]]
+    out
+  }
+  g <- d <- h <- b <- matrix(FALSE, nr, nc)
+  for (k in seq_len(K)) {
+    g <- g | decaler(0L,  k)
+    d <- d | decaler(0L, -k)
+    h <- h | decaler( k, 0L)
+    b <- b | decaler(-k, 0L)
+  }
+  trou_h <- !ok & g & d     # colonne(s) manquante(s) entre deux zones valides
+  trou_v <- !ok & h & b     # ligne(s) manquante(s)
+  colonnes <- which(colSums(trou_h) >= seuil)
+  lignes   <- which(rowSums(trou_v) >= seuil)
+  cel <- matrix(FALSE, nr, nc)
+  if (length(colonnes)) cel[, colonnes] <- trou_h[, colonnes, drop = FALSE]
+  if (length(lignes))   cel[lignes, ]   <- cel[lignes, , drop = FALSE] | trou_v[lignes, , drop = FALSE]
+  list(cellules = cel, colonnes = colonnes, lignes = lignes, n_cellules = sum(cel))
+}
+
+#' Matrice de presence (TRUE = au moins un point SAFRAN dans la maille).
+matrice_presence <- function(dt) {
+  pts   <- unique(dt[, .(x, y)])
+  cells <- cellFromXY(RST_FRANCE, as.matrix(pts))
+  cells <- cells[!is.na(cells)]
+  ok <- rep(FALSE, ncell(RST_FRANCE))
+  ok[cells] <- TRUE
+  matrix(ok, nrow = nrow(RST_FRANCE), ncol = ncol(RST_FRANCE), byrow = TRUE)
+}
+
+#' Affiche les trous trouves, avec les coordonnees REELLES des points voisins
+#' (permet de distinguer "le serveur n'a pas renvoye ces points" d'un simple
+#' decalage de grille).
+afficher_trous <- function(diag, dt = NULL) {
+  for (j in diag$colonnes) {
+    xc <- xFromCol(RST_FRANCE, j)
+    li <- which(diag$cellules[, j])
+    y  <- yFromRow(RST_FRANCE, li)
+    cat(glue("  [TROU] colonne x~{round(xc)} : {length(li)} mailles, y de {round(min(y))} a {round(max(y))}\n"))
+    if (!is.null(dt)) {
+      proches <- sort(unique(round(dt$x[abs(dt$x - xc) <= 1.5 * SAFRAN_RES])))
+      cat("         x reels voisins dans les donnees :",
+          paste(head(proches, 12), collapse = ", "), "\n")
+    }
+  }
+  for (i in diag$lignes) {
+    yc <- yFromRow(RST_FRANCE, i)
+    co <- which(diag$cellules[i, ])
+    x  <- xFromCol(RST_FRANCE, co)
+    cat(glue("  [TROU] ligne y~{round(yc)} : {length(co)} mailles, x de {round(min(x))} a {round(max(x))}\n"))
+  }
+}
+
+#' Re-telecharge chaque ligne/colonne manquante par une bande etroite
+#' (3 mailles de large, 12 mailles de long) : une requete de geometrie
+#' differente de la dalle d'origine.
+reparer_trous <- function(diag, taille_bloc = 12L) {
+  demi <- 1.5 * SAFRAN_RES
+  bandes <- list()
+  for (j in diag$colonnes) {
+    xc <- xFromCol(RST_FRANCE, j)
+    y  <- yFromRow(RST_FRANCE, which(diag$cellules[, j]))
+    for (blk in split(y, ceiling(seq_along(y) / taille_bloc))) {
+      bandes[[length(bandes) + 1L]] <- c(xc - demi, min(blk) - demi, xc + demi, max(blk) + demi)
+    }
+  }
+  for (i in diag$lignes) {
+    yc <- yFromRow(RST_FRANCE, i)
+    x  <- xFromCol(RST_FRANCE, which(diag$cellules[i, ]))
+    for (blk in split(x, ceiling(seq_along(x) / taille_bloc))) {
+      bandes[[length(bandes) + 1L]] <- c(min(blk) - demi, yc - demi, max(blk) + demi, yc + demi)
+    }
+  }
+  cat(glue("  Reparation : {length(bandes)} bande(s) etroite(s) a re-telecharger\n"))
+  n_ok <- 0L
+  for (k in seq_along(bandes)) {
+    b <- bandes[[k]]
+    f <- file.path(DIR_CACHE, glue("safran_v2_patch_{sprintf('%03d', k)}_{ANNEE}.csv"))
+    res <- telecharger_bbox(b[1], b[2], b[3], b[4], f)
+    if (res$statut == "ok") n_ok <- n_ok + 1L
+    Sys.sleep(1.0)
+  }
+  cat(glue("  Reparation : {n_ok}/{length(bandes)} bande(s) recuperee(s)\n"))
+  invisible(n_ok)
+}
+
+#' Controle la couverture des points SAFRAN lus, tente une reparation, relit.
+#' Ne fait JAMAIS echouer le job : la decision finale est prise apres
+#' assemblage et comblement (verifier_couverture_finale).
+controler_et_reparer_couverture <- function(dt) {
+  cat(">> Controle de couverture SAFRAN...\n")
+  diag <- trouver_trous_matrice(matrice_presence(dt), K = 3L)
+  if (diag$n_cellules == 0L) {
+    cat("  Aucune maille manquante detectee.\n\n")
+    return(dt)
+  }
+  cat(glue("  {diag$n_cellules} maille(s) manquante(s) detectee(s) :\n"))
+  afficher_trous(diag, dt)
+  n_rep <- tryCatch(reparer_trous(diag), error = function(e) {
+    message("  Reparation impossible : ", conditionMessage(e)); 0L
+  })
+  if (n_rep == 0L) { cat("\n"); return(dt) }
+  dt2   <- lire_cache_complet()
+  diag2 <- trouver_trous_matrice(matrice_presence(dt2), K = 3L)
+  cat(glue("  Apres reparation : {diag2$n_cellules} maille(s) manquante(s)\n\n"))
+  dt2
+}
+
+#' Comble par la moyenne des voisins les colonnes/lignes manquantes de largeur
+#' <= largeur_max mailles (champ climatique lisse a 8 km). Retourne la liste
+#' meteo corrigee et le nombre de mailles comblees. Les mailles comblees sont
+#' comptees et tracees dans le journal : ce n'est pas une donnee mesuree.
+combler_trous_raster <- function(meteo, largeur_max = 2L) {
+  presence <- app(meteo$tmax, fun = "max", na.rm = TRUE)
+  ok   <- !is.na(as.matrix(presence, wide = TRUE))
+  diag <- trouver_trous_matrice(ok, K = largeur_max)
+  if (diag$n_cellules == 0L) return(list(meteo = meteo, n = 0L))
+
+  cat(glue(">> Comblement de {diag$n_cellules} maille(s) manquante(s) par moyenne des voisins...\n"))
+  masque <- rast(presence)
+  values(masque) <- ifelse(as.vector(t(diag$cellules)), 1, NA_real_)
+
+  for (nom in c("tmean", "tmin", "tmax", "rad")) {
+    r  <- meteo[[nom]]
+    f  <- focal(r, w = 3, fun = "mean", na.policy = "only", na.rm = TRUE)
+    f  <- mask(f, masque)
+    r2 <- cover(r, f)
+    names(r2) <- names(r)
+    time(r2)  <- time(r)
+    meteo[[nom]] <- r2
+  }
+  message("::warning::", diag$n_cellules, " maille(s) SAFRAN absente(s) de la reponse de l'API ",
+          "comblee(s) par interpolation (moyenne des voisins).")
+  list(meteo = meteo, n = diag$n_cellules)
+}
+
+#' Dernier controle sur les rasters assembles : echec si des trous subsistent.
+verifier_couverture_finale <- function(meteo) {
+  presence <- app(meteo$tmax, fun = "max", na.rm = TRUE)
+  diag <- trouver_trous_matrice(!is.na(as.matrix(presence, wide = TRUE)), K = 3L)
+  if (diag$n_cellules == 0L) {
+    cat("  Couverture finale : OK, aucune maille manquante.\n\n")
+    return(invisible(TRUE))
+  }
+  afficher_trous(diag)
+  echec_qc(glue("{diag$n_cellules} maille(s) SAFRAN manquante(s) apres reparation et comblement : ",
+                "les cartes auraient des barres blanches."))
 }
 
 assembler_rasters_nationaux <- function(dt) {
