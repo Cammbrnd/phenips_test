@@ -72,6 +72,15 @@ TABLE_GENERATIONS <- data.frame(
   stringsAsFactors = FALSE
 )
 
+# Etiquettes et couleurs passees a get_generations_rst() : "zero generation", puis
+# 1, 1s, 2, 2s... (couvees soeurs comprises) jusqu'a 10. Les valeurs par defaut de
+# barrks s'arretent trop tot : "not enough labels/colors passed, raster contains
+# cells with 5.5 generations" (scenario "shaded", octobre 2026).
+LABELS_RASTER_BARRKS   <- c("-", as.vector(rbind(as.character(1:10), paste0(1:10, "s"))))
+COULEURS_RASTER_BARRKS <- c(TABLE_GENERATIONS$couleur,
+                            rep(utils::tail(TABLE_GENERATIONS$couleur, 1),
+                                length(LABELS_RASTER_BARRKS) - nrow(TABLE_GENERATIONS)))
+
 # Indice continu : classes de 0.25 generation, de 0 a 6, couleurs FIXES
 # (la meme valeur a toujours la meme couleur, quelles que soient la semaine et
 # l'exposition). Ancres entieres : 0 jaune pale -> 4 rouge sombre -> 6 violet.
@@ -124,7 +133,8 @@ get_gen1 <- function(pheno) {
 get_gen_rst <- function(pheno, date_ref = max(pheno$dates)) {
   date_str <- as.character(date_ref)
   tryCatch(
-    get_generations_rst(pheno, date_str),
+    get_generations_rst(pheno, date_str,
+                        colors = COULEURS_RASTER_BARRKS, labels = LABELS_RASTER_BARRKS),
     error = function(e) {
       # ::warning:: -> visible dans les annotations du run GitHub Actions
       message("::warning::PHENIPS get_generations_rst(", date_str, ") : ", conditionMessage(e))
