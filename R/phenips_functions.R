@@ -126,8 +126,9 @@ get_gen_rst <- function(pheno, date_ref = max(pheno$dates)) {
   tryCatch(
     get_generations_rst(pheno, date_str),
     error = function(e) {
-      message(glue("  [INFO] get_generations_rst({date_str}) : {conditionMessage(e)}"))
-      message("  -> Pas de generation complete disponible (normal avant ete).")
+      # ::warning:: -> visible dans les annotations du run GitHub Actions
+      message("::warning::PHENIPS get_generations_rst(", date_str, ") : ", conditionMessage(e))
+      message("  -> Pas de carte des generations (normal avant l'ete, anormal ensuite).")
       NULL
     }
   )
@@ -214,7 +215,7 @@ vectoriser_raster <- function(rst, nom_champ) {
   rst_wgs <- project(rst, "EPSG:4326", method = "near")
   v <- tryCatch(
     as.polygons(rst_wgs, dissolve = TRUE) |> st_as_sf(),
-    error = function(e) { message("  Erreur vectorisation : ", conditionMessage(e)); NULL }
+    error = function(e) { message("::warning::PHENIPS vectorisation : ", conditionMessage(e)); NULL }
   )
   if (is.null(v) || nrow(v) == 0) return(NULL)
   names(v)[1] <- nom_champ
@@ -252,6 +253,9 @@ produire_geojson_generations <- function(pheno, variante = "sunny", dir_out = DI
   date_ref <- max(pheno$dates)
   rst_gen  <- get_gen_rst(pheno, date_ref)
   if (is.null(rst_gen) || all(is.na(values(rst_gen)))) {
+    if (as.integer(format(date_ref, "%m")) >= 8) {
+      message("::warning::PHENIPS [", variante, "] : raster des generations vide ou absent")
+    }
     cat("  Pas de generation complete disponible (normal avant juillet).\n\n")
     return(invisible(NULL))
   }
