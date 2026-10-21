@@ -3,7 +3,12 @@ name: Mise a jour des 4 modeles (GeoJSON)
 on:
   schedule:
     - cron: "0 5 * * 1"   # tous les lundis a 05h00 UTC
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      diagnostic_rayonnement:
+        description: "Diagnostic seul : statistiques du rayonnement SSI_Q dans le cache, sans modeles ni publication"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # commit + push des GeoJSON
@@ -87,25 +92,35 @@ jobs:
           restore-keys: |
             safran-v2-
 
+      - name: Diagnostic du rayonnement SSI_Q (mode diagnostic uniquement)
+        if: ${{ inputs.diagnostic_rayonnement }}
+        run: Rscript R/diag_rayonnement.R
+
       - name: 1. Recuperation SAFRAN partagee (une seule fois pour les 4 modeles)
+        if: ${{ !inputs.diagnostic_rayonnement }}
         run: Rscript R/fetch_safran.R
 
       - name: 2. PHENIPS (Ips typographus)
+        if: ${{ !inputs.diagnostic_rayonnement }}
         run: Rscript R/pipeline_phenips.R
 
       - name: 3. CHAPY (Pityogenes chalcographus)
+        if: ${{ !inputs.diagnostic_rayonnement }}
         run: Rscript R/pipeline_chapy.R
 
       - name: 4. STENO (Ips sexdentatus)
+        if: ${{ !inputs.diagnostic_rayonnement }}
         run: Rscript R/pipeline_steno.R
 
       - name: 5. Monochamus galloprovincialis (bivoltisme A + B)
+        if: ${{ !inputs.diagnostic_rayonnement }}
         run: Rscript R/pipeline_monochamus.R
 
       # [P15] -A : prend aussi en compte les fichiers SUPPRIMES (purge des anciens
       # fichiers dates). Retry : si un autre commit est arrive entre-temps,
       # on se rebase dessus puis on repousse.
       - name: 6. Publier les GeoJSON (commit unique)
+        if: ${{ !inputs.diagnostic_rayonnement }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
