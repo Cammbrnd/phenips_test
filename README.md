@@ -189,3 +189,28 @@ n'existent qu'apres le premier run du workflow.
 `-` (aucune generation achevee) est lu comme le code 0 et non plus comme NA : le polygone
 gris « Generation NA » disparait. Le code 4.5 (couvee soeur de la generation 4) a son
 libelle et sa couleur. Un code inconnu ressort en magenta avec un `::warning::`.
+
+## v3 : masques d'essence (BD Forêt IGN)
+
+Depuis la v3, les modèles ne sont calculés que sur les mailles SAFRAN (8 km) qui **croisent
+l'essence-hôte** :
+
+| Modèle | Essence | Masque |
+|---|---|---|
+| PHENIPS-Clim, CHAPY | sapin / épicéa | `data/masques/masque_epicea.csv` |
+| STENO-DJ | tous les pins | `data/masques/masque_pin.csv` |
+
+- Source : **IGN, BD Forêt® V2** (WFS Géoplateforme, couche
+  `LANDCOVER.FORESTINVENTORY.V2:formation_vegetale`, champ `essence`). Épicéa = classe
+  « Sapin, épicéa » ; pin = toutes les classes commençant par « Pin » (sylvestre, maritime,
+  laricio/noir, d'Alep, à crochets/cembro, pins mélangés, autre pin).
+- Une maille est gardée dès qu'elle croise au moins un peuplement de l'essence
+  (`SEUIL_PART_MASQUE <- 0` dans `R/masques.R` ; le CSV contient aussi `part`, la part de la
+  maille couverte, pour monter ce seuil si besoin).
+- **Limite** : la BD Forêt V2 attribue une seule essence par peuplement. « Sapin, épicéa »
+  désigne les peuplements purs ; l'épicéa présent dans un peuplement classé « Mélange de
+  conifères » ou « Conifères » n'est pas visible. Les masques sont donc plutôt prudents.
+- Les masques sont **construits à la demande** (la BD Forêt change peu) : onglet Actions →
+  « Mise à jour des 4 modèles » → *Run workflow* avec `construire_masques` coché. Le workflow
+  commite `data/masques/`. Les pipelines s'arrêtent avec un message clair si un masque manque.
+- Monochamus n'est pas masqué.

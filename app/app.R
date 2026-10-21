@@ -52,8 +52,9 @@ MODELES <- list(
                       "a l'ombre peut donc donner autant, voire plus, de generations."),
     avertissement = paste("Une generation est comptee des qu'elle est presente (developpement",
                           "commence), pas forcement achevee : l'indice continu donne l'avancement.",
-                          "Potentiel thermique theorique : la carte ne tient pas compte de la presence",
-                          "d'epicea et n'indique pas un risque la ou il n'y a pas de population."),
+                          "Potentiel thermique theorique : seules les mailles de 8 km qui croisent au moins",
+                          "un peuplement de sapin / epicea (BD Foret IGN) sont affichees ; l'epicea present",
+                          "dans un peuplement melange n'est pas detecte. Ce n'est pas un risque observe."),
     couches = list(
       list(nom = "Generations", fichier = "phenips_generations_{variante}_latest.geojson",
            champ_label = "label"),
@@ -66,7 +67,8 @@ MODELES <- list(
   chapy = list(
     label = "CHAPY (Pityogenes chalcographus)",
     avertissement = paste("Une generation est comptee des qu'elle est presente (developpement",
-                          "commence), pas forcement achevee."),
+                          "commence), pas forcement achevee. Seules les mailles de 8 km qui croisent au moins",
+                          "un peuplement de sapin / epicea (BD Foret IGN) sont affichees."),
     couches = list(
       list(nom = "Generations",   fichier = "chapy_generations_latest.geojson", champ_label = "label"),
       list(nom = "Premier envol", fichier = "chapy_onset_latest.geojson",
@@ -86,7 +88,9 @@ MODELES <- list(
                       "ni la photoperiode, ni la variabilite d'une annee a l'autre."),
     avertissement = paste("Generations = MAXIMA THERMIQUES (temperature de l'air, hotes toujours",
                           "disponibles, pas d'arret photoperiodique). Indicateur d'aide a la decision,",
-                          "pas une prediction validee : a confronter a un piegeage de controle."),
+                          "pas une prediction validee : a confronter a un piegeage de controle.",
+                          "Seules les mailles de 8 km qui croisent au moins un peuplement de pin",
+                          "(BD Foret IGN) sont affichees."),
     couches = list(
       list(nom = "Generations", fichier = "steno_generations_{variante}_latest.geojson", champ_label = "libelle"),
       list(nom = "Essaimage",   fichier = "steno_essaimage_{variante}_latest.geojson",   champ_label = "libelle")
@@ -150,7 +154,7 @@ ui <- fluidPage(
   leafletOutput("carte", height = "68vh"),
   tags$p(
     style = "font-size: 11px; color: #6c757d; margin: 6px 0 12px 0;",
-    paste("Source : Meteo-France (donnees SAFRAN), via GeoSAS INRAE.",
+    paste("Source : Meteo-France (donnees SAFRAN), via GeoSAS INRAE ; essences : IGN, BD Foret V2.",
           "Modeles : PHENIPS-Clim (package barrks, Jentschke 2025 ; PHENIPS : Baier et al. 2007),",
           "CHAPY (Ogris et al. 2020) ; STENO-DJ (Pineau et al. 2016) et Monochamus : modeles internes fondes sur la litterature.",
           "Les cartes representent un potentiel de developpement thermique theorique,",
