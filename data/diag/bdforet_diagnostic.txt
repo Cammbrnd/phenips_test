@@ -54,23 +54,130 @@ Exemple : HTTP 200
 3 Forêt fermée sans couvert arboré      NR
 
 === Echantillon sur : LANDCOVER.FORESTINVENTORY.V2:formation_vegetale ===
-propertyName utilise : code_tfv,tfv,tfv_g11,essence,formation_vegetale
-  Vosges : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Jura : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Alpes_N : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Alpes_S : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Auvergne : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Morvan : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Landes : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Pyrenees : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Cevennes : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Ardennes : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Bretagne : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Limousin : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Vosges_nord : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Corse : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Sologne : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Provence : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Normandie : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  Vercors : HTTP 400 <?xml version="1.0" encoding="UTF-8"?><ows:ExceptionReport xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ows="http://www.opengis.net/ows/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-Duree echantillon : 2 s
+propertyName utilise : code_tfv,tfv,tfv_g11,essence
+  Vosges : 1805 objets
+  Jura : 1458 objets
+  Alpes_N : 1115 objets
+  Alpes_S : 2034 objets
+  Auvergne : 1437 objets
+  Morvan : 1980 objets
+  Landes : 1099 objets
+  Pyrenees : 1220 objets
+  Cevennes : 2694 objets
+  Ardennes : 1617 objets
+  Bretagne : 1568 objets
+  Limousin : 3277 objets
+  Vosges_nord : 1670 objets
+  Corse : 2825 objets
+  Sologne : 2882 objets
+  Provence : 2260 objets
+  Normandie : 618 objets
+  Vercors : 888 objets
+Duree echantillon : 7 s
+
+--- valeurs de 'code_tfv' (32) ---
+  4892  FF1-00-00
+  3785  LA4
+  2970  FF1-00
+  2878  FF31
+  2501  FF32
+  2216  FF0
+  1875  FO1
+  1569  LA6
+  1452  FF2G61-61
+  1018  FO2
+   877  FF1G01-01
+   728  FF1-09-09
+   696  FF2-52-52
+   662  FF2-64-64
+   622  FO3
+   505  FF2-51-51
+   438  FF2-90-90
+   412  FF2-00-00
+   401  FF2G53-53
+   367  FF1-49-49
+   365  FF1-10-10
+   293  FF1G06-06
+   264  FF2-63-63
+   236  FF2-00
+   184  FP
+   180  FF2-80-80
+    21  FF2-57-57
+    19  FF2-91-91
+    12  FF2G58-58
+     3  FF1-14-14
+     3  FF2-81-81
+     3  FO0
+
+--- valeurs de 'tfv' (35) ---
+  4892  Forêt fermée à mélange de feuillus
+  3785  Lande
+  2970  Forêt fermée de feuillus purs en îlots
+  2878  Forêt fermée à mélange de feuillus prépondérants et conifères
+  2501  Forêt fermée à mélange de conifères prépondérants et feuillus
+  2216  Forêt fermée sans couvert arboré
+  1875  Forêt ouverte de feuillus purs
+  1569  Formation herbacée
+  1452  Forêt fermée de sapin ou épicéa
+  1018  Forêt ouverte de conifères purs
+   877  Forêt fermée de chênes décidus purs
+   728  Forêt fermée de hêtre pur
+   696  Forêt fermée de pin sylvestre pur
+   662  Forêt fermée de douglas pur
+   622  Forêt ouverte à mélange de feuillus et conifères
+   505  Forêt fermée de pin maritime pur
+   412  Forêt fermée à mélange de conifères
+   401  Forêt fermée de pin laricio ou pin noir pur
+   365  Forêt fermée de châtaignier pur
+   293  Forêt fermée de chênes sempervirents purs
+   264  Forêt fermée de mélèze pur
+   236  Forêt fermée de conifères purs en îlots
+   211  Forêt fermée à mélange d’autres conifères
+   186  Forêt fermée d’un autre feuillu pur
+   184  Forêt fermée dun autre conifère pur autre que pin 
+   184  Peupleraie
+   181  Forêt fermée dun autre feuillu pur
+   180  Forêt fermée à mélange de pins purs
+    51  Forêt fermée à mélange dautres conifères
+    21  Forêt fermée de pin dAlep pur
+    12  Forêt fermée de pin à crochets ou pin cembro pur
+    11  Forêt fermée d’un autre conifère pur autre que pin 
+     3  Forêt fermée de robinier pur
+     3  Forêt fermée dun autre pin pur
+     3  Forêt ouverte sans couvert arboré
+
+--- valeurs de 'tfv_g11' (11) ---
+ 10495  Forêt fermée feuillus
+  5379  Forêt fermée mixte
+  5301  Forêt fermée conifères
+  3785  Lande
+  2216  Forêt fermée sans couvert arboré
+  1875  Forêt ouverte feuillus
+  1569  Formation herbacée
+  1018  Forêt ouverte conifères
+   622  Forêt ouverte mixte
+   184  Peupleraie
+     3  Forêt ouverte sans couvert arboré
+
+--- valeurs de 'essence' (21) ---
+ 10104  Feuillus
+  6001  Mixte
+  5354  NC
+  2219  NR
+  2123  Conifères
+  1452  Sapin, épicéa
+   877  Chênes décidus
+   728  Hêtre
+   696  Pin sylvestre
+   662  Douglas
+   505  Pin maritime
+   401  Pin laricio, pin noir
+   365  Châtaignier
+   293  Chênes sempervirents
+   264  Mélèze
+   184  Peuplier
+   180  Pins mélangés
+    21  Pin d'Alep
+    12  Pin à crochets, pin cembro
+     3  Pin autre
+     3  Robinier
