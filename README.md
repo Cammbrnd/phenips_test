@@ -116,9 +116,10 @@ data/cache_meteo/
 | `phenips_meta.json` | date des donnees, date de generation, version de barrks, mailles comblees, source |
 
 - `sunny` = ecorce exposee au sud, `shaded` = ecorce a l'ombre (scenario `max`
-  de barrks dans les deux cas). Le scenario defavorable n'est pas le meme partout :
-  au-dela de 38.9 C le developpement PHENIPS s'arrete, si bien qu'en region
-  mediterraneenne l'ombre peut donner plus de generations que le plein soleil.
+  de barrks dans les deux cas). Aucun des deux n'est systematiquement le pire cas :
+  au-dela de 38.9 C le developpement PHENIPS s'arrete, et une ecorce exposee au sud
+  depasse souvent ce seuil en ete. Sur les donnees d'octobre 2026, le scenario a l'ombre
+  donne en general une generation de plus que le scenario au soleil.
 - `COMPAT_ANCIENS_NOMS <- TRUE` (phenips_functions.R) recopie aussi le scenario
   `sunny` vers les anciens noms `phenips_generations_latest.geojson` et
   `phenips_onset_latest.geojson`, le temps de redeployer l'app. A passer a `FALSE`

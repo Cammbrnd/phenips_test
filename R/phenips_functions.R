@@ -38,10 +38,10 @@ dir.create(DIR_OUT, showWarnings = FALSE, recursive = TRUE)
 SOURCE_DONNEES <- paste0("Source : Meteo-France (donnees SAFRAN) via GeoSAS INRAE ; ",
                          "modele PHENIPS-Clim (package barrks)")
 
-# Deux scenarios d'exposition. Aucun n'est "le pire cas" partout : en region
-# mediterraneenne, l'ecorce exposee au sud depasse souvent 38.9 C (seuil
-# au-dela duquel PHENIPS arrete le developpement), si bien que "shaded" peut
-# donner PLUS de generations que "sunny" autour d'Avignon.
+# Deux scenarios d'exposition. Aucun n'est "le pire cas" partout : l'ecorce
+# exposee au sud depasse souvent 38.9 C en ete (seuil au-dela duquel PHENIPS
+# arrete le developpement), si bien que "shaded" peut donner PLUS de generations
+# que "sunny" (octobre 2026 : environ une generation de plus a l'ombre).
 VARIANTES_PHENIPS <- list(
   sunny  = list(exposure = "sunny",  scenario = "max", libelle = "Ecorce exposee au sud"),
   shaded = list(exposure = "shaded", scenario = "max", libelle = "Ecorce a l'ombre")
@@ -53,28 +53,36 @@ VARIANTES_PHENIPS <- list(
 # nouvelle app deployee.
 COMPAT_ANCIENS_NOMS <- TRUE
 
-# Table des generations barrks. `code` : numerique, la couvee soeur vaut +0.5.
-# Rampe MONOTONE jaune -> rouge sombre (plus c'est fonce, plus c'est avance).
+# Table des generations barrks. `code` : numerique deduit des LIBELLES barrks
+# ("1s" -> 1.5 : couvee soeur = +0.5, convention interne, pas celle de barrks).
+# Rampe jaune -> rouge sombre jusqu'a la 4e generation, puis violets (cas rares).
 TABLE_GENERATIONS <- data.frame(
-  code    = c(0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5),
-  texte   = c("-", "1", "1s", "2", "2s", "3", "3s", "4", "4s"),
+  code    = c(0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5),
+  texte   = c("-", "1", "1s", "2", "2s", "3", "3s", "4", "4s", "5", "5s", "6", "6s"),
   label   = c("Aucune generation achevee",
               "Gen. 1 achevee", "Gen. 1 + couvee soeur",
               "Gen. 2 achevee", "Gen. 2 + couvee soeur",
               "Gen. 3 achevee", "Gen. 3 + couvee soeur",
-              "Gen. 4 achevee", "Gen. 4 + couvee soeur"),
+              "Gen. 4 achevee", "Gen. 4 + couvee soeur",
+              "Gen. 5 achevee", "Gen. 5 + couvee soeur",
+              "Gen. 6 achevee", "Gen. 6 + couvee soeur"),
   couleur = c("#E8E8E8", "#FFFFB2", "#FED976", "#FD8D3C", "#E31A1C",
-              "#BD0026", "#800026", "#4D0015", "#2B000D"),
+              "#BD0026", "#800026", "#4D0015", "#2B000D",
+              "#6A51A3", "#54278F", "#3F007D", "#2D004B"),
   stringsAsFactors = FALSE
 )
 
-# Indice continu : classes de 0.25 generation, de 0 a 4, couleurs FIXES
-# (la meme valeur a toujours la meme couleur, d'une semaine a l'autre).
+# Indice continu : classes de 0.25 generation, de 0 a 6, couleurs FIXES
+# (la meme valeur a toujours la meme couleur, quelles que soient la semaine et
+# l'exposition). Ancres entieres : 0 jaune pale -> 4 rouge sombre -> 6 violet.
 PAS_INDICE     <- 0.25
-INDICE_MAX     <- 4
-PALETTE_INDICE <- grDevices::colorRampPalette(
-  c("#FFFFCC", "#FED976", "#FD8D3C", "#E31A1C", "#800026")
-)(INDICE_MAX / PAS_INDICE + 1)
+INDICE_MAX     <- 6
+PALETTE_INDICE <- local({
+  ancres <- c("#FFFFCC", "#FED976", "#FD8D3C", "#E31A1C", "#800026", "#4D0015", "#2D004B")
+  f   <- grDevices::colorRamp(ancres)
+  pos <- seq(0, INDICE_MAX, by = PAS_INDICE) / INDICE_MAX
+  grDevices::rgb(f(pos), maxColorValue = 255)
+})
 
 
 # =============================================================================
@@ -108,15 +116,15 @@ get_gen1 <- function(pheno) {
   NULL
 }
 
-#' Raster NUMERIQUE des generations a une date (0, 1, 1.5, 2, 2.5...).
-#' [P1] categorical = FALSE : la couvee soeur vaut +0.5 (doc barrks). Si la
-#' version installee ne connait pas cet argument, repli sur le raster
-#' categoriel ("1s"...), que normaliser_generation() sait aussi lire.
+#' Raster CATEGORIEL des generations a une date : libelles "-", "1", "1s", "2"...
+#' NE PAS utiliser categorical = FALSE : le raster numerique compte les couvees
+#' (1s et 2 valent tous deux 2, 2s et 3 valent tous deux 3...) et fusionne donc des
+#' classes differentes ; le test sur GitHub Actions l'a montre (octobre 2026).
+#' as.polygons() restitue les libelles, que normaliser_generation() sait lire.
 get_gen_rst <- function(pheno, date_ref = max(pheno$dates)) {
   date_str <- as.character(date_ref)
   tryCatch(
-    tryCatch(get_generations_rst(pheno, date_str, categorical = FALSE),
-             error = function(e) get_generations_rst(pheno, date_str)),
+    get_generations_rst(pheno, date_str),
     error = function(e) {
       message(glue("  [INFO] get_generations_rst({date_str}) : {conditionMessage(e)}"))
       message("  -> Pas de generation complete disponible (normal avant ete).")
@@ -249,6 +257,9 @@ produire_geojson_generations <- function(pheno, variante = "sunny", dir_out = DI
   }
   v <- vectoriser_raster(rst_gen, "generation_brute")
   if (is.null(v)) { cat("  Aucun polygone produit.\n\n"); return(invisible(NULL)) }
+  if (is.numeric(v$generation_brute)) {
+    message("::warning::Generations lues en numerique (libelles perdus) : classes a verifier")
+  }
 
   hab <- habiller_generations(normaliser_generation(v$generation_brute))
   v$generation_brute <- NULL
