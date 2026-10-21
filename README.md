@@ -157,4 +157,29 @@ et affiche un avertissement.
   **GeoSAS (INRAE)**. La mention figure dans l'app, dans `phenips_meta.json` et dans le
   champ `source` des GeoJSON PHENIPS.
 - Modele : PHENIPS (Baier et al. 2007), implementation du package R **barrks**.
-- Licence du depot : a definir (aucun fichier `LICENSE` n'est present).
+- Licence du depot : **Licence Ouverte 2.0 (Etalab)**, concedant : Departement de la sante
+  des forets (DSF) ; voir le fichier `LICENSE`. La mention « Source : Meteo-France » doit
+  etre conservee en cas de reutilisation.
+
+### STENO-DJ : trois scenarios (regles de Pineau et al. 2016)
+
+`R/steno_functions.R` et `R/pipeline_steno.R` appliquent les regles de Pineau et al.
+(2016) : temperature de l'air, 506 DJ au-dessus de 10.9 C, debut d'activite quand
+Tmax > 18 C deux jours de suite, ni maturation ni arret photoperiodique. Les
+generations sont des **maxima thermiques**, pas une prediction validee.
+Trois scenarios reprennent les marges d'erreur de la these :
+
+| Scenario | Seuil | Constante | Fichiers `latest` |
+|---|---|---|---|
+| `moyen` (reference) | 10.9 C | 506 DJ | `steno_generations_latest.geojson`, `steno_essaimage_latest.geojson` |
+| `pire` (rapide) | 10.7 C | 499 DJ | `steno_*_pire_latest.geojson` |
+| `moins_pire` (lent) | 11.1 C | 513 DJ | `steno_*_moins_pire_latest.geojson` |
+
+L'app propose ces trois scenarios dans un selecteur. Les fichiers `pire` et `moins_pire`
+n'existent qu'apres le premier run du workflow.
+
+### CHAPY : classes de generations
+
+`-` (aucune generation achevee) est lu comme le code 0 et non plus comme NA : le polygone
+gris « Generation NA » disparait. Le code 4.5 (couvee soeur de la generation 4) a son
+libelle et sa couleur. Un code inconnu ressort en magenta avec un `::warning::`.

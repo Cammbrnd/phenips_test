@@ -71,10 +71,22 @@ MODELES <- list(
     )
   ),
   steno = list(
-    label = "STENO-DJ (Ips sexdentatus)",
+    label     = "STENO-DJ (Ips sexdentatus)",
+    # Marges d'erreur de la these de Pineau (seuil 10.9 +/- 0.2 C, 506 +/- 7 DJ).
+    # Le scenario "moyen" garde les noms de fichiers historiques (sans suffixe).
+    variantes = c("Moyen (reference)" = "moyen", "Pire (developpement rapide)" = "pire",
+                  "Moins pire (developpement lent)" = "moins_pire"),
+    sans_suffixe = "moyen",
+    aide      = paste("Les trois scenarios reprennent les marges d'erreur publiees (seuil",
+                      "10.9 +/- 0.2 C ; 506 +/- 7 DJ par generation). Elles sont etroites :",
+                      "elles ne couvrent ni la temperature sous ecorce, ni la maturation,",
+                      "ni la photoperiode, ni la variabilite d'une annee a l'autre."),
+    avertissement = paste("Generations = MAXIMA THERMIQUES (temperature de l'air, hotes toujours",
+                          "disponibles, pas d'arret photoperiodique). Indicateur d'aide a la decision,",
+                          "pas une prediction validee : a confronter a un piegeage de controle."),
     couches = list(
-      list(nom = "Generations", fichier = "steno_generations_latest.geojson", champ_label = "libelle"),
-      list(nom = "Essaimage",   fichier = "steno_essaimage_latest.geojson",   champ_label = "libelle")
+      list(nom = "Generations", fichier = "steno_generations_{variante}_latest.geojson", champ_label = "libelle"),
+      list(nom = "Essaimage",   fichier = "steno_essaimage_{variante}_latest.geojson",   champ_label = "libelle")
     )
   ),
   monochamus = list(
@@ -137,7 +149,7 @@ ui <- fluidPage(
     style = "font-size: 11px; color: #6c757d; margin: 6px 0 12px 0;",
     paste("Source : Meteo-France (donnees SAFRAN), via GeoSAS INRAE.",
           "Modeles : PHENIPS-Clim (package barrks, Jentschke 2025 ; PHENIPS : Baier et al. 2007),",
-          "CHAPY (Ogris et al. 2020) ; STENO-DJ et Monochamus : modeles internes fondes sur la litterature.",
+          "CHAPY (Ogris et al. 2020) ; STENO-DJ (Pineau et al. 2016) et Monochamus : modeles internes fondes sur la litterature.",
           "Les cartes representent un potentiel de developpement thermique theorique,",
           "pas une observation de terrain.")
   )
@@ -179,10 +191,15 @@ server <- function(input, output, session) {
     get(nom_fichier, envir = cache, inherits = FALSE)$valeur
   }
 
-  nom_fichier_couche <- function(cc, variante) {
+  # {variante} -> scenario choisi. Pour le scenario "sans suffixe" (ex. STENO moyen),
+  # le "_{variante}" disparait en entier : steno_generations_latest.geojson.
+  nom_fichier_couche <- function(cc, variante, sans_suffixe = NULL) {
     f <- cc$fichier
-    if (!is.null(variante)) f <- gsub("{variante}", variante, f, fixed = TRUE)
-    f
+    if (is.null(variante)) return(f)
+    if (!is.null(sans_suffixe) && identical(variante, sans_suffixe)) {
+      return(gsub("_{variante}", "", f, fixed = TRUE))
+    }
+    gsub("{variante}", variante, f, fixed = TRUE)
   }
 
   # --- Selection courante (modele + scenario) -----------------------------------
@@ -221,7 +238,7 @@ server <- function(input, output, session) {
       }
     }
     for (cc in m$couches) {
-      g <- charger(nom_fichier_couche(cc, v))
+      g <- charger(nom_fichier_couche(cc, v, m$sans_suffixe))
       if (!is.null(g)) {
         d <- date_depuis_couche(g)
         if (!is.na(d)) return(d)
@@ -266,7 +283,7 @@ server <- function(input, output, session) {
     groupes <- character(0)
     for (k in seq_along(m$couches)) {
       cc <- m$couches[[k]]
-      g  <- charger(nom_fichier_couche(cc, v))
+      g  <- charger(nom_fichier_couche(cc, v, m$sans_suffixe))
       if (is.null(g) || nrow(g) == 0) next        # couche absente : rien d'ancien n'est conserve
 
       champ_label <- premier_champ(g, cc$champ_label)

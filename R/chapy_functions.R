@@ -395,32 +395,40 @@ get_gen_rst_chapy <- function(pheno, date_ref = NULL) {
 # conventions sont normalisees vers une valeur numerique unique.
 
 #' "1" / 1 -> 1.0 ; "1s" / 1.5 -> 1.5 (couvee soeur / sister brood)
+#' "-" (aucune generation achevee) -> 0 : sans cela as.numeric("-") donnait NA,
+#' d'ou un polygone "Generation NA" gris dans le GeoJSON et la legende.
 normaliser_generation <- function(x) {
-  x_chr <- as.character(x)
+  x_chr <- trimws(as.character(x))
   soeur <- grepl("s$", x_chr, ignore.case = TRUE)
   base  <- suppressWarnings(as.numeric(sub("s$", "", x_chr, ignore.case = TRUE)))
-  ifelse(soeur & !is.na(base), base + 0.5, base)
+  out   <- ifelse(soeur & !is.na(base), base + 0.5, base)
+  out[x_chr %in% "-"] <- 0
+  out
 }
 
 LABELS_GENERATIONS <- c(
+  "0"   = "Aucune generation achevee",
   "1"   = "Generation 1 complete",
   "1.5" = "Couvee soeur (gen 1.5)",
   "2"   = "Generation 2 complete",
   "2.5" = "Couvee soeur (gen 2.5)",
   "3"   = "Generation 3 complete",
   "3.5" = "Couvee soeur (gen 3.5)",
-  "4"   = "Generation 4 complete"
+  "4"   = "Generation 4 complete",
+  "4.5" = "Couvee soeur (gen 4.5)"
 )
 
 # Palette alignee sur barrks_colors() / viridis, identique a phenips_v3
 PALETTE_GENERATIONS <- c(
+  "0"   = "#E8E8E8",
   "1"   = "#35B779FF",
   "1.5" = "#FDE725FF",
   "2"   = "#31688EFF",
   "2.5" = "#FFA500FF",
   "3"   = "#440154FF",
   "3.5" = "#C0392BFF",
-  "4"   = "#7B241CFF"
+  "4"   = "#7B241CFF",
+  "4.5" = "#4A0E0EFF"
 )
 
 #' Libelle lisible pour popup web.
@@ -432,10 +440,16 @@ libelle_generation <- function(gen_num) {
 }
 
 #' Couleur hex pour rendu MapLibre / Leaflet.
+#' Un code absent de la palette ressort en MAGENTA (et non en gris) avec un
+#' avertissement : un code de generation inattendu doit se voir sur la carte.
 couleur_generation <- function(gen_num) {
   cle <- as.character(gen_num)
   col <- unname(PALETTE_GENERATIONS[match(cle, names(PALETTE_GENERATIONS))])
-  col[is.na(col)] <- "#CCCCCC"
+  if (any(is.na(col))) {
+    message("::warning::CHAPY : codes de generation sans couleur : ",
+            paste(unique(cle[is.na(col)]), collapse = ", "))
+    col[is.na(col)] <- "#FF00FF"
+  }
   col
 }
 
