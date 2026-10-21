@@ -13,6 +13,10 @@ on:
         description: "Diagnostic seul : explore la BD Foret (WFS IGN), ecrit data/diag/, sans modeles"
         type: boolean
         default: false
+      construire_masques:
+        description: "Construit les masques epicea / pin (BD Foret IGN) dans data/masques/, sans modeles"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # commit + push des GeoJSON
@@ -104,17 +108,21 @@ jobs:
         if: ${{ inputs.diagnostic_bdforet }}
         run: Rscript R/diag_bdforet.R
 
-      - name: Publier le diagnostic BD Foret (data/diag)
-        if: ${{ inputs.diagnostic_bdforet }}
+      - name: Construire les masques d'essence (mode masques uniquement)
+        if: ${{ inputs.construire_masques }}
+        run: Rscript R/construire_masques.R
+
+      - name: Publier diagnostic / masques (data/diag, data/masques)
+        if: ${{ inputs.diagnostic_bdforet || inputs.construire_masques }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A -- data/diag
+          git add -A -- data/diag data/masques
           if git diff --cached --quiet; then
             echo "Rien a publier"
             exit 0
           fi
-          git commit -m "Diagnostic BD Foret $(date -u +%Y-%m-%d)"
+          git commit -m "BD Foret : diagnostic / masques $(date -u +%Y-%m-%d)"
           for essai in 1 2 3; do
             git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
             sleep 15
@@ -122,30 +130,30 @@ jobs:
           exit 1
 
       - name: 1. Recuperation SAFRAN partagee (une seule fois pour les 4 modeles)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
         run: Rscript R/fetch_safran.R
 
       - name: 2. PHENIPS (Ips typographus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
         run: Rscript R/pipeline_phenips.R
 
       - name: 3. CHAPY (Pityogenes chalcographus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
         run: Rscript R/pipeline_chapy.R
 
       - name: 4. STENO (Ips sexdentatus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
         run: Rscript R/pipeline_steno.R
 
       - name: 5. Monochamus galloprovincialis (bivoltisme A + B)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
         run: Rscript R/pipeline_monochamus.R
 
       # [P15] -A : prend aussi en compte les fichiers SUPPRIMES (purge des anciens
       # fichiers dates). Retry : si un autre commit est arrive entre-temps,
       # on se rebase dessus puis on repousse.
       - name: 6. Publier les GeoJSON (commit unique)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -165,7 +173,7 @@ jobs:
 
       # [P15] Notification d'echec : un ticket ouvert (ou commente s'il existe deja)
       - name: Signaler l'echec par un ticket GitHub
-        if: failure()
+        if: ${{ failure() && !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
