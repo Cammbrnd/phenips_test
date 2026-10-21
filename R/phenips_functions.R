@@ -53,19 +53,23 @@ VARIANTES_PHENIPS <- list(
 # nouvelle app deployee.
 COMPAT_ANCIENS_NOMS <- TRUE
 
+# SEMANTIQUE : get_generations_rst(threshold = 0) compte les generations PRESENTES
+# (documentation barrks : "how many generations are present"), c'est-a-dire dont le
+# developpement a commence, pas forcement achevees. Les libelles ne disent donc pas
+# "achevee" ; l'avancement de la derniere generation est donne par l'indice continu.
 # Table des generations barrks. `code` : numerique deduit des LIBELLES barrks
 # ("1s" -> 1.5 : couvee soeur = +0.5, convention interne, pas celle de barrks).
 # Rampe jaune -> rouge sombre jusqu'a la 4e generation, puis violets (cas rares).
 TABLE_GENERATIONS <- data.frame(
   code    = c(0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5),
   texte   = c("-", "1", "1s", "2", "2s", "3", "3s", "4", "4s", "5", "5s", "6", "6s"),
-  label   = c("Aucune generation achevee",
-              "Gen. 1 achevee", "Gen. 1 + couvee soeur",
-              "Gen. 2 achevee", "Gen. 2 + couvee soeur",
-              "Gen. 3 achevee", "Gen. 3 + couvee soeur",
-              "Gen. 4 achevee", "Gen. 4 + couvee soeur",
-              "Gen. 5 achevee", "Gen. 5 + couvee soeur",
-              "Gen. 6 achevee", "Gen. 6 + couvee soeur"),
+  label   = c("Aucune generation",
+              "Gen. 1", "Gen. 1 + couvee soeur",
+              "Gen. 2", "Gen. 2 + couvee soeur",
+              "Gen. 3", "Gen. 3 + couvee soeur",
+              "Gen. 4", "Gen. 4 + couvee soeur",
+              "Gen. 5", "Gen. 5 + couvee soeur",
+              "Gen. 6", "Gen. 6 + couvee soeur"),
   couleur = c("#E8E8E8", "#FFFFB2", "#FED976", "#FD8D3C", "#E31A1C",
               "#BD0026", "#800026", "#4D0015", "#2B000D",
               "#6A51A3", "#54278F", "#3F007D", "#2D004B"),

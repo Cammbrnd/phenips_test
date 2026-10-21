@@ -50,9 +50,10 @@ MODELES <- list(
                       "une ecorce exposee au sud depasse souvent 38.9 C en ete, seuil au-dela",
                       "duquel le developpement s'arrete (PHENIPS). En annee chaude, le scenario",
                       "a l'ombre peut donc donner autant, voire plus, de generations."),
-    avertissement = paste("Scenario majorant (potentiel thermique theorique). La carte ne tient",
-                          "pas compte de la presence d'epicea : hors zone d'epicea, elle n'indique",
-                          "pas un risque mais ce que donnerait le climat si une population etait presente."),
+    avertissement = paste("Une generation est comptee des qu'elle est presente (developpement",
+                          "commence), pas forcement achevee : l'indice continu donne l'avancement.",
+                          "Potentiel thermique theorique : la carte ne tient pas compte de la presence",
+                          "d'epicea et n'indique pas un risque la ou il n'y a pas de population."),
     couches = list(
       list(nom = "Generations", fichier = "phenips_generations_{variante}_latest.geojson",
            champ_label = "label"),
@@ -64,6 +65,8 @@ MODELES <- list(
   ),
   chapy = list(
     label = "CHAPY (Pityogenes chalcographus)",
+    avertissement = paste("Une generation est comptee des qu'elle est presente (developpement",
+                          "commence), pas forcement achevee."),
     couches = list(
       list(nom = "Generations",   fichier = "chapy_generations_latest.geojson", champ_label = "label"),
       list(nom = "Premier envol", fichier = "chapy_onset_latest.geojson",

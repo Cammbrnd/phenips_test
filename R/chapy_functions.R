@@ -406,15 +406,17 @@ normaliser_generation <- function(x) {
   out
 }
 
+# SEMANTIQUE : get_generations_rst (seuil 0) compte les generations PRESENTES (developpement
+# commence), pas forcement achevees : les libelles ne disent pas "complete".
 LABELS_GENERATIONS <- c(
-  "0"   = "Aucune generation achevee",
-  "1"   = "Generation 1 complete",
+  "0"   = "Aucune generation",
+  "1"   = "Generation 1",
   "1.5" = "Couvee soeur (gen 1.5)",
-  "2"   = "Generation 2 complete",
+  "2"   = "Generation 2",
   "2.5" = "Couvee soeur (gen 2.5)",
-  "3"   = "Generation 3 complete",
+  "3"   = "Generation 3",
   "3.5" = "Couvee soeur (gen 3.5)",
-  "4"   = "Generation 4 complete",
+  "4"   = "Generation 4",
   "4.5" = "Couvee soeur (gen 4.5)"
 )
 

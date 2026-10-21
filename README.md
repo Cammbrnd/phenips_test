@@ -128,6 +128,11 @@ data/cache_meteo/
   les 4 dates les plus recentes par type de fichier. Un `*_latest` est toujours
   la copie du fichier ecrit pendant le run (jamais d'un fichier plus ancien) ;
   si la couche n'a pas pu etre produite, le `latest` est supprime.
+- **Que compte une « generation » ?** `get_generations_rst(threshold = 0)` compte les generations
+  *presentes* (documentation barrks : « how many generations are present »), c'est-a-dire dont le
+  developpement a commence ; elles ne sont pas forcement achevees. Les libelles sont donc `Gen. 3`,
+  `Gen. 3 + couvee soeur`, sans « achevee ». L'avancement reel est donne par l'indice continu
+  (somme des developpements des generations filiales, plafonnes a 1).
 - Les cartes montrent un **potentiel thermique de developpement**, sans masque
   d'epicea ni masque du territoire.
 
