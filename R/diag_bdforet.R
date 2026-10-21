@@ -67,7 +67,8 @@ zones <- list("Vosges" = c(988000, 6781000), "Jura" = c(922000, 6626000), "Alpes
 tn <- cibles[grep("V2", cibles)[1]]
 if (is.na(tn)) tn <- cibles[1]
 note("\n=== Echantillon sur : ", tn, " ===")
-pn <- paste(setdiff(champs_non_geom[[tn]], c("gid", "id", "fid")), collapse = ",")
+# On retire l'identifiant, la geometrie et l'element "enveloppe" (nom de la couche), qui font un 400
+pn <- paste(setdiff(champs_non_geom[[tn]], c("gid", "id", "fid", "geom", "the_geom", sub(".*:", "", tn))), collapse = ",")
 note("propertyName utilise : ", pn)
 tout <- list()
 t0 <- Sys.time()
@@ -77,7 +78,10 @@ for (z in names(zones)) {
   r <- wfs_get(list(SERVICE = "WFS", VERSION = "2.0.0", REQUEST = "GetFeature", TYPENAMES = tn,
                     COUNT = 4000, OUTPUTFORMAT = "application/json", SRSNAME = "EPSG:2154",
                     BBOX = bb, PROPERTYNAME = pn))
-  if (r$code != 200) { note("  ", z, " : HTTP ", r$code, " ", substr(r$txt, 1, 200)); next }
+  if (r$code != 200) {
+    msg <- regmatches(r$txt, regexpr("(?<=<ows:ExceptionText>)[^<]+", r$txt, perl = TRUE))
+    note("  ", z, " : HTTP ", r$code, " ", if (length(msg)) msg else substr(r$txt, 1, 300)); next
+  }
   p <- tryCatch(fromJSON(r$txt)$features$properties, error = function(e) NULL)
   if (is.null(p) || nrow(p) == 0) { note("  ", z, " : vide"); next }
   p$zone <- z
