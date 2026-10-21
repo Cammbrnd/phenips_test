@@ -67,7 +67,7 @@ jobs:
             pkgs <- c("barrks","terra","httr2","ggplot2","tidyterra","lubridate",
                       "glue","sf","scales","data.table","dplyr","jsonlite")
             # requireNamespace() CHARGE vraiment le package (dyn.load) : un binaire en cache
-            # lie a d'anciennes bibliotheques systeme est detecte et reinstalle.
+            # lie a des bibliotheques systeme anciennes est detecte et reinstalle.
             ok <- vapply(pkgs, function(p) suppressWarnings(requireNamespace(p, quietly = TRUE)), logical(1))
             if (!all(ok)) {
               cat("A (re)installer :", paste(pkgs[!ok], collapse = ", "), "\n")
