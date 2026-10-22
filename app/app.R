@@ -275,7 +275,7 @@ server <- function(input, output, session) {
   # --- Carte ----------------------------------------------------------------------
   output$carte <- renderLeaflet({
     leaflet() |>
-      addProviderTiles("CartoDB.Positron") |>
+      addProviderTiles("OpenStreetMap.France") |>
       setView(lng = 2.5, lat = 46.5, zoom = 6)
   })
 
