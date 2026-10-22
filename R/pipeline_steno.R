@@ -17,6 +17,10 @@ source("R/steno_functions.R")   # garde uniquement le modele + les exports GeoJS
 meteo_wrap <- readRDS("data/cache_meteo/meteo_national.rds")
 meteo      <- lapply(meteo_wrap, terra::unwrap)
 
+# [v3] On ne garde que les mailles SAFRAN qui croisent l'essence-hote (BD Foret IGN)
+source("R/masques.R")
+meteo <- appliquer_masque(meteo, charger_masque("pin", meteo$tmean), nom = "pin")
+
 # Trois scenarios = marges d'erreur de la these (voir SCENARIOS dans
 # R/steno_functions.R) : pire (developpement rapide), moyen, moins_pire (lent).
 # Temperature de l'air, comme la these. Le scenario "moyen" garde les noms de

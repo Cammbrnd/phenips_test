@@ -597,14 +597,19 @@ exporter_rasters_chapy <- function(pheno, meteo = NULL, dir_out = DIR_OUT) {
 #     method = "near" pour preserver les valeurs discretes.
 
 #' Vectorise un raster en polygones dissous, avec repli si terra refuse.
-vectoriser_dissous <- function(rst_wgs, contexte = "") {
+#' [v3] `rst` est sur la grille native (L93, mailles de 8 km) : on vectorise d'abord, puis on
+#' reprojette les POLYGONES en WGS84. Reprojeter le raster avant (plus proche voisin)
+#' decalait les bords de maille de plusieurs km et deformait les mailles isolees des
+#' cartes masquees par essence.
+vectoriser_dissous <- function(rst, contexte = "") {
+  vers_wgs <- function(v) sf::st_transform(v, 4326)
   tryCatch(
-    st_as_sf(as.polygons(rst_wgs, dissolve = TRUE)),
+    vers_wgs(st_as_sf(as.polygons(rst, dissolve = TRUE))),
     error = function(e) {
       message("  dissolve=TRUE refuse ", contexte, " (", e$message,
               ") -> repli sur dissolve=FALSE")
       tryCatch(
-        st_as_sf(as.polygons(rst_wgs, dissolve = FALSE, na.rm = TRUE)),
+        vers_wgs(st_as_sf(as.polygons(rst, dissolve = FALSE, na.rm = TRUE))),
         error = function(e2) NULL
       )
     }
@@ -623,8 +628,7 @@ produire_geojson_generations_chapy <- function(pheno, dir_out = DIR_OUT) {
     return(invisible(NULL))
   }
   
-  rst_wgs  <- project(rst_gen, CRS_WGS, method = "near")
-  vect_gen <- vectoriser_dissous(rst_wgs, "(generations)")
+  vect_gen <- vectoriser_dissous(rst_gen, "(generations)")
   
   if (is.null(vect_gen) || nrow(vect_gen) == 0) {
     catg("  Aucun polygone produit.\n")
@@ -669,8 +673,7 @@ produire_geojson_envol_chapy <- function(pheno, dir_out = DIR_OUT) {
     return(invisible(NULL))
   }
   
-  rst_wgs    <- project(envol$rst, CRS_WGS, method = "near")
-  vect_envol <- vectoriser_dissous(rst_wgs, "(premier envol)")
+  vect_envol <- vectoriser_dissous(envol$rst, "(premier envol)")
   
   if (is.null(vect_envol) || nrow(vect_envol) == 0) {
     catg("  Aucun polygone produit.\n")
