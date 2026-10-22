@@ -214,3 +214,15 @@ l'essence-hôte** :
   « Mise à jour des 4 modèles » → *Run workflow* avec `construire_masques` coché. Le workflow
   commite `data/masques/`. Les pipelines s'arrêtent avec un message clair si un masque manque.
 - Monochamus n'est pas masqué.
+
+## Déploiement de l'app Shiny (GitHub Actions → shinyapps.io)
+
+`.github/workflows/deploy-app.yml` déploie `app/` sur shinyapps.io (app `phenips`) à chaque
+changement du dossier `app/` sur `main`, ou à la demande (Actions → *Deployer l'app Shiny* →
+*Run workflow*). Il remplace `rsconnect::deployApp("app")` en local.
+
+Secrets à créer une fois (Settings → Secrets and variables → Actions → *New repository secret*) :
+`SHINYAPPS_NAME` (nom du compte), `SHINYAPPS_TOKEN` et `SHINYAPPS_SECRET`
+(shinyapps.io → Account → Tokens → *Show*).
+
+Les données (GeoJSON) ne nécessitent pas de redéploiement : l'app les lit sur `main`.
