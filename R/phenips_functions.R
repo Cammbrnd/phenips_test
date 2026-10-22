@@ -1,6 +1,18 @@
 # =============================================================================
 # PHENIPS-Clim — France metropolitaine
-# v3 — SAFRAN via API GéoSAS INRAE | Architecture dalles + cache CSV
+# v4 — SAFRAN via API GeoSAS INRAE | scenarios sunny + shaded | exports GeoJSON
+# =============================================================================
+# Changements v4 (par rapport a v3) :
+#   [P1] codes de generation barrks ("1s", "2s", "-") correctement traduits :
+#        avant, ils tombaient tous dans le gris #cccccc du case_when.
+#   [P3] max.col() : les NA sont forces a FALSE (une maille avec un jour SAFRAN
+#        manquant perdait sa date d'essaimage).
+#   [P7] deux scenarios publies : exposition sud (sunny) et a l'ombre (shaded).
+#   [P8] indice continu de generations cumulees (en plus de la classe discrete).
+#   [P2] "latest" = le fichier REELLEMENT ecrit, jamais "le plus recent par
+#        date de modification" ; supprime s'il n'y a rien a publier.
+#   [P15] purge des fichiers dates (on garde les 4 derniers par couche).
+#   [P16] champ `source` dans les GeoJSON + fichier phenips_meta.json.
 # =============================================================================
 
 
@@ -9,7 +21,6 @@
 # =============================================================================
 # Seulement ce qui est utilise APRES le chargement du jeu SAFRAN partage
 # (safran_common.R deja charge terra/httr2/glue/data.table/lubridate).
-# ggplot2/tidyterra/scales ne sont plus necessaires : plus d'export PNG.
 
 library(barrks)
 library(sf)
@@ -20,15 +31,75 @@ library(sf)
 # =============================================================================
 # ANNEE, DATE_DEB, RST_FRANCE, CRS_L93/CRS_WGS proviennent deja de
 # safran_common.R (source avant ce fichier) : pas de redeclaration ici.
-# DIR_OUT n'est PAS defini par safran_common.R (qui ne gere que le cache
-# SAFRAN, commun) : chaque modele garde le sien, tous pointant vers "data".
 
 DIR_OUT <- "data"
 dir.create(DIR_OUT, showWarnings = FALSE, recursive = TRUE)
 
+SOURCE_DONNEES <- paste0("Source : Meteo-France (donnees SAFRAN) via GeoSAS INRAE ; ",
+                         "modele PHENIPS-Clim (package barrks)")
+
+# Deux scenarios d'exposition. Aucun n'est "le pire cas" partout : l'ecorce
+# exposee au sud depasse souvent 38.9 C en ete (seuil au-dela duquel PHENIPS
+# arrete le developpement), si bien que "shaded" peut donner PLUS de generations
+# que "sunny" (octobre 2026 : environ une generation de plus a l'ombre).
+VARIANTES_PHENIPS <- list(
+  sunny  = list(exposure = "sunny",  scenario = "max", libelle = "Ecorce exposee au sud"),
+  shaded = list(exposure = "shaded", scenario = "max", libelle = "Ecorce a l'ombre")
+)
+
+# Les anciens noms de fichiers (sans suffixe de scenario) continuent d'etre
+# ecrits, = scenario "sunny", pour que l'ancienne version de l'app Shiny deja
+# deployee ne fige pas pendant la transition. A passer a FALSE une fois la
+# nouvelle app deployee.
+COMPAT_ANCIENS_NOMS <- TRUE
+
+# SEMANTIQUE : get_generations_rst(threshold = 0) compte les generations PRESENTES
+# (documentation barrks : "how many generations are present"), c'est-a-dire dont le
+# developpement a commence, pas forcement achevees. Les libelles ne disent donc pas
+# "achevee" ; l'avancement de la derniere generation est donne par l'indice continu.
+# Table des generations barrks. `code` : numerique deduit des LIBELLES barrks
+# ("1s" -> 1.5 : couvee soeur = +0.5, convention interne, pas celle de barrks).
+# Rampe jaune -> rouge sombre jusqu'a la 4e generation, puis violets (cas rares).
+TABLE_GENERATIONS <- data.frame(
+  code    = c(0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5),
+  texte   = c("-", "1", "1s", "2", "2s", "3", "3s", "4", "4s", "5", "5s", "6", "6s"),
+  label   = c("Aucune generation",
+              "Gen. 1", "Gen. 1 + couvee soeur",
+              "Gen. 2", "Gen. 2 + couvee soeur",
+              "Gen. 3", "Gen. 3 + couvee soeur",
+              "Gen. 4", "Gen. 4 + couvee soeur",
+              "Gen. 5", "Gen. 5 + couvee soeur",
+              "Gen. 6", "Gen. 6 + couvee soeur"),
+  couleur = c("#E8E8E8", "#FFFFB2", "#FED976", "#FD8D3C", "#E31A1C",
+              "#BD0026", "#800026", "#4D0015", "#2B000D",
+              "#6A51A3", "#54278F", "#3F007D", "#2D004B"),
+  stringsAsFactors = FALSE
+)
+
+# Etiquettes et couleurs passees a get_generations_rst() : "zero generation", puis
+# 1, 1s, 2, 2s... (couvees soeurs comprises) jusqu'a 10. Les valeurs par defaut de
+# barrks s'arretent trop tot : "not enough labels/colors passed, raster contains
+# cells with 5.5 generations" (scenario "shaded", octobre 2026).
+LABELS_RASTER_BARRKS   <- c("-", as.vector(rbind(as.character(1:10), paste0(1:10, "s"))))
+COULEURS_RASTER_BARRKS <- c(TABLE_GENERATIONS$couleur,
+                            rep(utils::tail(TABLE_GENERATIONS$couleur, 1),
+                                length(LABELS_RASTER_BARRKS) - nrow(TABLE_GENERATIONS)))
+
+# Indice continu : classes de 0.25 generation, de 0 a 6, couleurs FIXES
+# (la meme valeur a toujours la meme couleur, quelles que soient la semaine et
+# l'exposition). Ancres entieres : 0 jaune pale -> 4 rouge sombre -> 6 violet.
+PAS_INDICE     <- 0.25
+INDICE_MAX     <- 6
+PALETTE_INDICE <- local({
+  ancres <- c("#FFFFCC", "#FED976", "#FD8D3C", "#E31A1C", "#800026", "#4D0015", "#2D004B")
+  f   <- grDevices::colorRamp(ancres)
+  pos <- seq(0, INDICE_MAX, by = PAS_INDICE) / INDICE_MAX
+  grDevices::rgb(f(pos), maxColorValue = 255)
+})
+
 
 # =============================================================================
-# 7. HELPERS ACCES OBJET BARRKS
+# 2. HELPERS ACCES OBJET BARRKS
 # =============================================================================
 
 inspect_barrks <- function(pheno) {
@@ -58,13 +129,20 @@ get_gen1 <- function(pheno) {
   NULL
 }
 
-get_gen_rst <- function(pheno) {
-  date_str <- as.character(max(pheno$dates))
+#' Raster CATEGORIEL des generations a une date : libelles "-", "1", "1s", "2"...
+#' NE PAS utiliser categorical = FALSE : le raster numerique compte les couvees
+#' (1s et 2 valent tous deux 2, 2s et 3 valent tous deux 3...) et fusionne donc des
+#' classes differentes ; le test sur GitHub Actions l'a montre (octobre 2026).
+#' as.polygons() restitue les libelles, que normaliser_generation() sait lire.
+get_gen_rst <- function(pheno, date_ref = max(pheno$dates)) {
+  date_str <- as.character(date_ref)
   tryCatch(
-    get_generations_rst(pheno, date_str),
+    get_generations_rst(pheno, date_str,
+                        colors = COULEURS_RASTER_BARRKS, labels = LABELS_RASTER_BARRKS),
     error = function(e) {
-      message(glue("  [INFO] get_generations_rst({date_str}) : {e$message}"))
-      message("  -> Pas de generation complete disponible (normal avant ete).")
+      # ::warning:: -> visible dans les annotations du run GitHub Actions
+      message("::warning::PHENIPS get_generations_rst(", date_str, ") : ", conditionMessage(e))
+      message("  -> Pas de carte des generations (normal avant l'ete, anormal ensuite).")
       NULL
     }
   )
@@ -72,7 +150,41 @@ get_gen_rst <- function(pheno) {
 
 
 # =============================================================================
-# 8. MODELISATION PHENIPS-Clim
+# 3. NOMENCLATURE DES GENERATIONS  [P1]
+# =============================================================================
+
+#' "-" -> 0 ; "1" / 1 -> 1 ; "1s" / 1.5 -> 1.5 ; "2s" -> 2.5 ...
+#' Accepte aussi bien les codes texte de barrks que les nombres.
+normaliser_generation <- function(x) {
+  x_chr <- trimws(as.character(x))
+  soeur <- grepl("s$", x_chr, ignore.case = TRUE)
+  base  <- suppressWarnings(as.numeric(sub("s$", "", x_chr, ignore.case = TRUE)))
+  out   <- ifelse(soeur, base + 0.5, base)
+  out[x_chr %in% "-"] <- 0
+  out
+}
+
+#' Libelle, couleur, ordre et code texte pour un vecteur de codes numeriques.
+#' Un code absent de TABLE_GENERATIONS ressort en MAGENTA "Code inconnu" :
+#' une future version de barrks qui ajouterait un code se verra tout de suite.
+habiller_generations <- function(code) {
+  i <- match(round(code * 2) / 2, TABLE_GENERATIONS$code)
+  inconnus <- is.na(i)
+  if (any(inconnus)) {
+    message("::warning::Codes de generation barrks inconnus : ",
+            paste(unique(code[inconnus]), collapse = ", "))
+  }
+  list(
+    generation = ifelse(inconnus, as.character(code), TABLE_GENERATIONS$texte[i]),
+    label      = ifelse(inconnus, paste0("Code inconnu : ", code), TABLE_GENERATIONS$label[i]),
+    couleur    = ifelse(inconnus, "#FF00FF", TABLE_GENERATIONS$couleur[i]),
+    ordre      = ifelse(inconnus, NA_integer_, i - 1L)
+  )
+}
+
+
+# =============================================================================
+# 4. MODELISATION PHENIPS-Clim
 # =============================================================================
 
 modeliser_phenips <- function(meteo,
@@ -109,121 +221,256 @@ modeliser_phenips <- function(meteo,
 
 
 # =============================================================================
-# 10b. EXPORT GEOJSON DES GENERATIONS
+# 5. OUTILS D'EXPORT GEOJSON
 # =============================================================================
 
-produire_geojson_generations <- function(pheno, dir_out = DIR_OUT) {
-  cat(">> Vectorisation generations -> GeoJSON...\n")
-  rst_gen <- get_gen_rst(pheno)
-  if (is.null(rst_gen) || all(is.na(values(rst_gen)))) {
-    cat("  Pas de generation complete disponible (normal avant juillet).\n\n")
-    return(invisible(NULL))
-  }
-  date_j      <- format(max(pheno$dates), "%Y%m%d")
-  date_calcul <- as.character(max(pheno$dates))
-  rst_wgs <- project(rst_gen, "EPSG:4326", method = "near")
-  vect_gen <- tryCatch(
-    as.polygons(rst_wgs, dissolve = TRUE) |> st_as_sf(),
-    error = function(e) { message("  Erreur vectorisation : ", e$message); NULL }
+#' Raster -> polygones dissous (WGS84), premiere colonne renommee `nom_champ`.
+#' [v3] On vectorise sur la grille native (L93, mailles de 8 km) PUIS on reprojette les
+#' polygones. L'ancienne methode (reprojection du raster en WGS84 par plus proche voisin,
+#' puis vectorisation) decalait les bords de maille de plusieurs km : invisible sur une
+#' carte pleine, mais elle deformait les mailles isolees des cartes masquees par essence.
+vectoriser_raster <- function(rst, nom_champ) {
+  v <- tryCatch(
+    as.polygons(rst, dissolve = TRUE) |> st_as_sf() |> st_transform(4326),
+    error = function(e) { message("::warning::PHENIPS vectorisation : ", conditionMessage(e)); NULL }
   )
-  if (is.null(vect_gen) || nrow(vect_gen) == 0) {
-    cat("  Aucun polygone produit.\n\n")
-    return(invisible(NULL))
-  }
-  names(vect_gen)[1] <- "generation"
-  vect_gen$label <- dplyr::case_when(
-    vect_gen$generation == 1   ~ "Generation 1 complete",
-    vect_gen$generation == 1.5 ~ "Brood soeur (gen 1.5)",
-    vect_gen$generation == 2   ~ "Generation 2 complete",
-    vect_gen$generation == 2.5 ~ "Brood soeur gen 2",
-    vect_gen$generation == 3   ~ "Generation 3 complete",
-    TRUE ~ paste0("Gen ", vect_gen$generation)
-  )
-  vect_gen$couleur <- dplyr::case_when(
-    vect_gen$generation == 1   ~ "#35B779FF",
-    vect_gen$generation == 1.5 ~ "#FDE725FF",
-    vect_gen$generation == 2   ~ "#31688EFF",
-    vect_gen$generation == 2.5 ~ "#FFA500",
-    vect_gen$generation == 3   ~ "#440154FF",
-    TRUE ~ "#cccccc"
-  )
-  vect_gen$date_calcul <- date_calcul
-  vect_gen$annee       <- ANNEE
-  vect_gen <- sf::st_simplify(vect_gen, dTolerance = 0.005, preserveTopology = TRUE)
-  vect_gen <- vect_gen[!sf::st_is_empty(vect_gen), ]
-  chemin <- file.path(dir_out, glue("phenips_generations_{date_j}.geojson"))
-  sf::st_write(vect_gen, chemin, delete_dsn = TRUE, quiet = TRUE,
+  if (is.null(v) || nrow(v) == 0) return(NULL)
+  names(v)[1] <- nom_champ
+  v
+}
+
+#' Metadonnees communes a tous les GeoJSON PHENIPS. [P13][P16]
+ajouter_meta <- function(v, variante, date_ref) {
+  v$date_calcul <- as.character(date_ref)
+  v$annee       <- ANNEE
+  v$scenario    <- variante
+  v$exposition  <- VARIANTES_PHENIPS[[variante]]$libelle
+  v$source      <- SOURCE_DONNEES
+  v
+}
+
+#' Simplifie, ecrit, et RETOURNE LE CHEMIN ecrit (utilise par publier_latest).
+ecrire_geojson <- function(v, nom_fichier, dir_out = DIR_OUT) {
+  v <- sf::st_simplify(v, dTolerance = 0.005, preserveTopology = TRUE)
+  v <- v[!sf::st_is_empty(v), ]
+  chemin <- file.path(dir_out, nom_fichier)
+  sf::st_write(v, chemin, delete_dsn = TRUE, quiet = TRUE,
                layer_options = "COORDINATE_PRECISION=5")
-  n_poly <- nrow(vect_gen)
-  taille <- round(file.size(chemin) / 1024, 0)
-  cat(glue("  {n_poly} polygones | {taille} Ko -> {basename(chemin)}\n\n"))
-  invisible(vect_gen)
+  cat(glue("  {nrow(v)} polygones | {round(file.size(chemin) / 1024, 0)} Ko -> {nom_fichier}\n\n"))
+  chemin
 }
 
 
 # =============================================================================
-# 10c. EXPORT GEOJSON DATE DE PREMIER ESSAIMAGE (ONSET)
+# 6. EXPORT : GENERATIONS (classes)  [P1]
 # =============================================================================
 
-produire_geojson_onset <- function(pheno, dir_out = DIR_OUT) {
-  cat(">> Vectorisation onset (premier essaimage) -> GeoJSON...\n")
-  onset  <- pheno$onset
-  dates  <- pheno$dates
+produire_geojson_generations <- function(pheno, variante = "sunny", dir_out = DIR_OUT) {
+  cat(glue(">> [{variante}] Vectorisation generations -> GeoJSON...\n"))
+  date_ref <- max(pheno$dates)
+  rst_gen  <- get_gen_rst(pheno, date_ref)
+  if (is.null(rst_gen) || all(is.na(values(rst_gen)))) {
+    if (as.integer(format(date_ref, "%m")) >= 8) {
+      message("::warning::PHENIPS [", variante, "] : raster des generations vide ou absent")
+    }
+    cat("  Pas de generation complete disponible (normal avant juillet).\n\n")
+    return(invisible(NULL))
+  }
+  v <- vectoriser_raster(rst_gen, "generation_brute")
+  if (is.null(v)) { cat("  Aucun polygone produit.\n\n"); return(invisible(NULL)) }
+  if (is.numeric(v$generation_brute)) {
+    message("::warning::Generations lues en numerique (libelles perdus) : classes a verifier")
+  }
+
+  hab <- habiller_generations(normaliser_generation(v$generation_brute))
+  v$generation_brute <- NULL
+  v$generation <- hab$generation
+  v$label      <- hab$label
+  v$couleur    <- hab$couleur
+  v$ordre      <- hab$ordre
+  v <- v[order(v$ordre), ]
+  v <- ajouter_meta(v, variante, date_ref)
+
+  invisible(ecrire_geojson(v, glue("phenips_generations_{variante}_{format(date_ref, '%Y%m%d')}.geojson"),
+                           dir_out))
+}
+
+
+# =============================================================================
+# 7. EXPORT : DATE DE PREMIER ESSAIMAGE (onset)  [P3]
+# =============================================================================
+
+produire_geojson_onset <- function(pheno, variante = "sunny", dir_out = DIR_OUT) {
+  cat(glue(">> [{variante}] Vectorisation onset (premier essaimage) -> GeoJSON...\n"))
+  onset <- pheno$onset
+  dates <- pheno$dates
   if (is.null(onset) || nlyr(onset) == 0) {
     cat("  Raster onset absent.\n\n")
     return(invisible(NULL))
   }
-  date_j <- format(max(dates), "%Y%m%d")
+  date_ref   <- max(dates)
   onset_vals <- values(onset)
   has_onset  <- rowSums(onset_vals > 0, na.rm = TRUE) > 0
-  idx_onset <- rep(NA_integer_, nrow(onset_vals))
+  idx_onset  <- rep(NA_integer_, nrow(onset_vals))
   if (any(has_onset, na.rm = TRUE)) {
-    sub_mat <- onset_vals[has_onset, , drop = FALSE]
-    idx_onset[has_onset] <- max.col(sub_mat > 0, ties.method = "first")
+    sous_bin <- onset_vals[has_onset, , drop = FALSE] > 0
+    # [P3] Sans cette ligne, une maille avec un seul jour SAFRAN manquant
+    # donnait max.col() = NA et disparaissait de la carte.
+    sous_bin[is.na(sous_bin)] <- FALSE
+    idx_onset[has_onset] <- max.col(sous_bin, ties.method = "first")
   }
   doy_onset_vec <- rep(NA_real_, length(idx_onset))
   valides <- !is.na(idx_onset)
   doy_onset_vec[valides] <- as.integer(format(dates[idx_onset[valides]], "%j"))
   rst_onset_doy <- RST_FRANCE
   values(rst_onset_doy) <- doy_onset_vec
-  rst_onset_doy[is.na(rst_onset_doy)] <- NA
-  rst_wgs <- project(rst_onset_doy, "EPSG:4326", method = "near")
-  vect_onset <- tryCatch(
-    as.polygons(rst_wgs, dissolve = TRUE) |> st_as_sf(),
-    error = function(e) { message("  Erreur vectorisation onset : ", e$message); NULL }
-  )
-  if (is.null(vect_onset) || nrow(vect_onset) == 0) {
-    cat("  Aucun polygone onset produit (pas encore d essaimage).\n\n")
+
+  v <- vectoriser_raster(rst_onset_doy, "doy")
+  if (is.null(v)) {
+    cat("  Aucun polygone onset produit (pas encore d'essaimage).\n\n")
     return(invisible(NULL))
   }
-  names(vect_onset)[1] <- "doy"
   origine <- as.Date(glue("{ANNEE}-01-01"))
-  vect_onset$date_onset   <- format(origine + vect_onset$doy - 1L, "%d/%m/%Y")
-  vect_onset$date_iso     <- format(origine + vect_onset$doy - 1L, "%Y-%m-%d")
-  vect_onset$semaine      <- as.integer(format(origine + vect_onset$doy - 1L, "%V"))
-  vect_onset$date_calcul  <- as.character(max(dates))
-  vect_onset$annee        <- ANNEE
-  vect_onset$doy <- NULL
-  vect_onset <- sf::st_simplify(vect_onset, dTolerance = 0.005, preserveTopology = TRUE)
-  vect_onset <- vect_onset[!sf::st_is_empty(vect_onset), ]
-  chemin <- file.path(dir_out, glue("phenips_onset_{date_j}.geojson"))
-  sf::st_write(vect_onset, chemin, delete_dsn = TRUE, quiet = TRUE,
-               layer_options = "COORDINATE_PRECISION=5")
-  n_poly <- nrow(vect_onset)
-  taille <- round(file.size(chemin) / 1024, 0)
-  n_dates <- length(unique(vect_onset$date_onset))
-  cat(glue("  {n_poly} polygones | {n_dates} dates uniques | {taille} Ko -> {basename(chemin)}\n\n"))
-  invisible(vect_onset)
+  v$date_onset <- format(origine + v$doy - 1L, "%d/%m/%Y")
+  v$date_iso   <- format(origine + v$doy - 1L, "%Y-%m-%d")
+  v$semaine    <- as.integer(format(origine + v$doy - 1L, "%V"))
+  v$doy <- NULL
+  v <- ajouter_meta(v, variante, date_ref)
+
+  invisible(ecrire_geojson(v, glue("phenips_onset_{variante}_{format(date_ref, '%Y%m%d')}.geojson"),
+                           dir_out))
 }
 
 
 # =============================================================================
-# 11. SYNTHESE CONSOLE (diagnostic dans les logs GitHub Actions)
+# 8. EXPORT : INDICE CONTINU DE GENERATIONS CUMULEES  [P8]
+# =============================================================================
+# Indice = somme, sur les generations filiales 1..n, du developpement de chaque
+# generation ramene a [0, 1]. Exemple : 2.40 = 2 generations achevees + 40 %
+# de la 3e. Contrairement a la classe discrete, il distingue deux mailles
+# situees du meme cote d'un seuil. Contrairement au seul developpement de la
+# generation 1, il ne sature pas a 100 % en milieu d'ete.
+# Les couvees soeurs ne sont pas comptees (cohorte distincte de la filiale).
+
+produire_geojson_indice <- function(pheno, variante = "sunny", dir_out = DIR_OUT) {
+  cat(glue(">> [{variante}] Indice continu de generations -> GeoJSON...\n"))
+  date_ref <- max(pheno$dates)
+
+  gens <- tryCatch(as.numeric(unlist(prop_filial_generations(pheno))), error = function(e) NULL)
+  if (is.null(gens) || length(gens) == 0 || anyNA(gens)) gens <- 1:3
+  gens <- sort(unique(gens[gens == floor(gens)]))
+
+  couches <- lapply(gens, function(g) {
+    tryCatch({
+      r <- get_development_rst(pheno, generation = g, dates = as.character(date_ref))
+      # -1 = "generation pas encore presente" (doc barrks) -> 0 ; plafond a 1
+      clamp(r[[1]], lower = 0, upper = 1, values = TRUE)
+    }, error = function(e) {
+      message(glue("  [INFO] developpement generation {g} indisponible : {conditionMessage(e)}"))
+      NULL
+    })
+  })
+  couches <- Filter(Negate(is.null), couches)
+  if (length(couches) == 0) {
+    cat("  Aucun developpement disponible.\n\n")
+    return(invisible(NULL))
+  }
+  indice <- Reduce(`+`, couches)
+  classe <- floor(indice / PAS_INDICE) * PAS_INDICE
+
+  v <- vectoriser_raster(classe, "borne_inf")
+  if (is.null(v)) { cat("  Aucun polygone produit.\n\n"); return(invisible(NULL)) }
+
+  n_max <- length(couches)
+  v$borne_inf <- as.numeric(v$borne_inf)
+  v$borne_sup <- pmin(v$borne_inf + PAS_INDICE, n_max)
+  v$label <- ifelse(v$borne_inf >= n_max,
+                    sprintf("%d generations achevees", n_max),
+                    sprintf("%.2f - %.2f generations", v$borne_inf, v$borne_sup))
+  v$ordre   <- as.integer(round(v$borne_inf / PAS_INDICE))
+  v$couleur <- PALETTE_INDICE[pmin(v$ordre + 1L, length(PALETTE_INDICE))]
+  v <- v[order(v$ordre), ]
+  v <- ajouter_meta(v, variante, date_ref)
+
+  invisible(ecrire_geojson(v, glue("phenips_indice_{variante}_{format(date_ref, '%Y%m%d')}.geojson"),
+                           dir_out))
+}
+
+
+# =============================================================================
+# 9. PUBLICATION : copie "latest", metadonnees, purge  [P2][P15][P16]
+# =============================================================================
+
+#' Copie `chemin` (le fichier qu'on vient d'ecrire) vers le nom stable lu par
+#' l'app. [P2] Si rien n'a ete produit (`chemin` NULL), le nom stable est
+#' SUPPRIME : avant, on recopiait "le plus recent fichier date du dossier",
+#' donc en janvier l'app affichait la carte d'aout de l'annee precedente.
+publier_latest <- function(chemin, nom_stable, dir_out = DIR_OUT) {
+  cible <- file.path(dir_out, nom_stable)
+  if (is.null(chemin)) {
+    if (file.exists(cible)) {
+      file.remove(cible)
+      cat(glue("  Aucune donnee : {nom_stable} supprime (pas de carte perimee).\n"))
+    }
+    return(invisible(FALSE))
+  }
+  file.copy(chemin, cible, overwrite = TRUE)
+  cat(glue("  Copie stable : {basename(chemin)} -> {nom_stable}\n"))
+  invisible(TRUE)
+}
+
+#' Garde les `garder` dates les plus recentes pour chaque couche PHENIPS
+#' (phenips_<couche>_<AAAAMMJJ>.geojson), supprime les autres. Les fichiers
+#' *_latest.geojson ne correspondent pas au motif : ils ne sont jamais touches.
+purger_fichiers_dates <- function(dir_out = DIR_OUT, garder = 4L) {
+  f <- list.files(dir_out, pattern = "^phenips_.*_[0-9]{8}\\.geojson$")
+  if (length(f) == 0) return(invisible(character(0)))
+  date    <- sub("^.*_([0-9]{8})\\.geojson$", "\\1", f)
+  prefixe <- sub("_[0-9]{8}\\.geojson$", "", f)
+  a_supprimer <- character(0)
+  for (p in unique(prefixe)) {
+    dates_p <- sort(unique(date[prefixe == p]), decreasing = TRUE)
+    if (length(dates_p) > garder) {
+      vieux <- dates_p[-seq_len(garder)]
+      a_supprimer <- c(a_supprimer, f[prefixe == p & date %in% vieux])
+    }
+  }
+  if (length(a_supprimer) > 0) {
+    file.remove(file.path(dir_out, a_supprimer))
+    cat(glue("  Purge : {length(a_supprimer)} ancien(s) fichier(s) date(s) supprime(s).\n"))
+  }
+  invisible(a_supprimer)
+}
+
+#' phenips_meta.json : date des donnees, version de barrks, etc. Lu par l'app
+#' pour afficher la fraicheur meme quand une couche est absente. [P13]
+ecrire_meta_phenips <- function(date_donnees, variantes, dir_out = DIR_OUT) {
+  qc <- tryCatch(readRDS("data/cache_meteo/qc_safran.rds"), error = function(e) NULL)
+  comblees <- if (!is.null(qc) && !is.null(qc$n_cellules_comblees) &&
+                  !is.na(qc$n_cellules_comblees)) qc$n_cellules_comblees else NA
+  json_str <- function(x) paste0('"', gsub('"', '\\\\"', as.character(x)), '"')
+  champs <- c(
+    sprintf('"date_donnees": %s',     json_str(date_donnees)),
+    sprintf('"date_generation": %s',  json_str(format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))),
+    sprintf('"barrks_version": %s',   json_str(as.character(utils::packageVersion("barrks")))),
+    sprintf('"variantes": [%s]',      paste(json_str(variantes), collapse = ", ")),
+    sprintf('"mailles_comblees": %s', if (is.na(comblees)) "null" else as.character(comblees)),
+    sprintf('"source": %s',           json_str(SOURCE_DONNEES))
+  )
+  chemin <- file.path(dir_out, "phenips_meta.json")
+  writeLines(c("{", paste0("  ", champs, collapse = ",\n"), "}"), chemin)
+  cat(glue("  Metadonnees -> {basename(chemin)} (donnees au {date_donnees})\n"))
+  invisible(chemin)
+}
+
+
+# =============================================================================
+# 10. SYNTHESE CONSOLE (diagnostic dans les logs GitHub Actions)
 # =============================================================================
 
 synthese_console <- function(pheno) {
   cat("\n", strrep("=", 60), "\n")
-  cat("  SYNTHESE PHENIPS-Clim — France metropolitaine\n")
+  cat("  SYNTHESE PHENIPS-Clim - France metropolitaine\n")
   cat(strrep("=", 60), "\n")
 
   date_j  <- max(pheno$dates)

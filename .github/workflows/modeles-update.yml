@@ -3,19 +3,49 @@ name: Mise a jour des 4 modeles (GeoJSON)
 on:
   schedule:
     - cron: "0 5 * * 1"   # tous les lundis a 05h00 UTC
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      diagnostic_rayonnement:
+        description: "Diagnostic seul : statistiques du rayonnement SSI_Q dans le cache, sans modeles ni publication"
+        type: boolean
+        default: false
+      diagnostic_bdforet:
+        description: "Diagnostic seul : explore la BD Foret (WFS IGN), ecrit data/diag/, sans modeles"
+        type: boolean
+        default: false
+      construire_masques:
+        description: "Construit les masques epicea / pin (BD Foret IGN) dans data/masques/, sans modeles"
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
+  contents: write   # commit + push des GeoJSON
+  issues: write     # ticket automatique en cas d'echec
+
+# [P15] Un seul run a la fois : un lancement manuel pendant le run du lundi
+# attend la fin du premier au lieu de lui faire concurrence au moment du push.
+concurrency:
+  group: maj-modeles
+  cancel-in-progress: false
 
 jobs:
   update:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120   # les 4 modelisations + 1 telechargement partage
+    # Image figee : "ubuntu-latest" bascule vers Ubuntu 26 (octobre 2026). Les packages R
+    # compiles (terra, sf) du cache sont lies aux bibliotheques systeme GDAL/PROJ de
+    # l'image qui les a produits ; changer d'image sans changer le cache les casse.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180   # 4 modelisations + 1 telechargement partage (~121 requetes SAFRAN)
+
+    env:
+      # "true"  : un trou de couverture SAFRAN fait ECHOUER le run (rien n'est publie)
+      # "false" : le trou est signale par ::warning:: et le run continue
+      SAFRAN_QC_STRICT: "true"
 
     steps:
       - name: Cloner le depot
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # necessaire pour pull --rebase avant le push
 
       - name: Installer les librairies systeme (GDAL / GEOS / PROJ / UDUNITS)
         run: |
@@ -28,50 +58,131 @@ jobs:
           r-version: "4.4"
           use-public-rspm: true
 
-      - name: Cache des packages R
+      # [P10] Versions figees si renv.lock est present (voir R/init_renv.R)
+      - name: Installer les packages R (renv.lock)
+        if: hashFiles('renv.lock') != ''
+        uses: r-lib/actions/setup-renv@v2
+
+      - name: Cache des packages R (sans renv.lock)
+        if: hashFiles('renv.lock') == ''
         uses: actions/cache@v4
         with:
           path: ${{ env.R_LIBS_USER }}
-          key: r-pkgs-${{ runner.os }}-v2
+          key: r-pkgs-ubuntu2404-v3
           restore-keys: |
-            r-pkgs-${{ runner.os }}-
+            r-pkgs-ubuntu2404-
 
-      - name: Installer les packages R (binaires RSPM)
+      - name: Installer les packages R (sans renv.lock, versions non figees)
+        if: hashFiles('renv.lock') == ''
         run: |
+          echo "::warning::renv.lock absent : versions des packages non figees (lancer R/init_renv.R en local)"
           Rscript -e '
             pkgs <- c("barrks","terra","httr2","ggplot2","tidyterra","lubridate",
-                      "glue","sf","scales","data.table","dplyr")
-            manquants <- pkgs[!pkgs %in% rownames(installed.packages())]
-            if (length(manquants) > 0) install.packages(manquants)
+                      "glue","sf","scales","data.table","dplyr","jsonlite")
+            # requireNamespace() CHARGE vraiment le package (dyn.load) : un binaire en cache
+            # lie a des bibliotheques systeme anciennes est detecte et reinstalle.
+            ok <- vapply(pkgs, function(p) suppressWarnings(requireNamespace(p, quietly = TRUE)), logical(1))
+            if (!all(ok)) {
+              cat("A (re)installer :", paste(pkgs[!ok], collapse = ", "), "\n")
+              install.packages(pkgs[!ok])
+            }
+            ok <- vapply(pkgs, function(p) suppressWarnings(requireNamespace(p, quietly = TRUE)), logical(1))
+            if (!all(ok)) stop("Packages inutilisables : ", paste(pkgs[!ok], collapse = ", "))
           '
 
+      # [P4] Cle v2 : les anciens CSV (dalles de 50 km, sans marge) ne sont plus
+      # reutilises. Les fichiers de cache portent aussi le prefixe safran_v2_.
       - name: Cache SAFRAN (evite de tout retelecharger a chaque run)
         uses: actions/cache@v4
         with:
           path: data/cache_safran
-          key: safran-cache-${{ github.run_id }}
+          key: safran-v2-${{ github.run_id }}
           restore-keys: |
-            safran-cache-
+            safran-v2-
 
-      - name: 1. Recuperation SAFRAN partagee (une seule fois pour les 4 modeles)
-        run: Rscript R/fetch_safran.R
+      - name: Diagnostic du rayonnement SSI_Q (mode diagnostic uniquement)
+        if: ${{ inputs.diagnostic_rayonnement }}
+        run: Rscript R/diag_rayonnement.R
 
-      - name: 2. PHENIPS (Ips typographus)
-        run: Rscript R/pipeline_phenips.R
+      - name: Diagnostic BD Foret (mode diagnostic uniquement)
+        if: ${{ inputs.diagnostic_bdforet }}
+        run: Rscript R/diag_bdforet.R
 
-      - name: 3. CHAPY (Pityogenes chalcographus)
-        run: Rscript R/pipeline_chapy.R
+      - name: Construire les masques d'essence (mode masques uniquement)
+        if: ${{ inputs.construire_masques }}
+        run: Rscript R/construire_masques.R
 
-      - name: 4. STENO (Ips sexdentatus)
-        run: Rscript R/pipeline_steno.R
-
-      - name: 5. Monochamus galloprovincialis (bivoltisme A + B)
-        run: Rscript R/pipeline_monochamus.R
-
-      - name: 6. Publier les GeoJSON (commit unique)
+      - name: Publier diagnostic / masques (data/diag, data/masques)
+        if: ${{ inputs.diagnostic_bdforet || inputs.construire_masques }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/*.geojson
-          git diff --cached --quiet && echo "Rien de nouveau a publier" || git commit -m "MAJ 4 modeles $(date -u +%Y-%m-%d)"
-          git push
+          git add -A -- data/diag data/masques
+          if git diff --cached --quiet; then
+            echo "Rien a publier"
+            exit 0
+          fi
+          git commit -m "BD Foret : diagnostic / masques $(date -u +%Y-%m-%d)"
+          for essai in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep 15
+          done
+          exit 1
+
+      - name: 1. Recuperation SAFRAN partagee (une seule fois pour les 4 modeles)
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        run: Rscript R/fetch_safran.R
+
+      - name: 2. PHENIPS (Ips typographus)
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        run: Rscript R/pipeline_phenips.R
+
+      - name: 3. CHAPY (Pityogenes chalcographus)
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        run: Rscript R/pipeline_chapy.R
+
+      - name: 4. STENO (Ips sexdentatus)
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        run: Rscript R/pipeline_steno.R
+
+      - name: 5. Monochamus galloprovincialis (bivoltisme A + B)
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        run: Rscript R/pipeline_monochamus.R
+
+      # [P15] -A : prend aussi en compte les fichiers SUPPRIMES (purge des anciens
+      # fichiers dates). Retry : si un autre commit est arrive entre-temps,
+      # on se rebase dessus puis on repousse.
+      - name: 6. Publier les GeoJSON (commit unique)
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A -- 'data/*.geojson' 'data/*.json'
+          if git diff --cached --quiet; then
+            echo "Rien de nouveau a publier"
+            exit 0
+          fi
+          git commit -m "MAJ 4 modeles $(date -u +%Y-%m-%d)"
+          for essai in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "Echec du push (essai ${essai}/3), nouvel essai dans 15 s"
+            sleep 15
+          done
+          echo "::error::Impossible de publier apres 3 essais"
+          exit 1
+
+      # [P15] Notification d'echec : un ticket ouvert (ou commente s'il existe deja)
+      - name: Signaler l'echec par un ticket GitHub
+        if: ${{ failure() && !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          titre="Echec de la mise a jour automatique des modeles"
+          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          corps="Le run du $(date -u +%Y-%m-%d) a echoue : ${url}"
+          existant=$(gh issue list --state open --search "\"${titre}\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "${existant}" ]; then
+            gh issue comment "${existant}" --body "${corps}"
+          else
+            gh issue create --title "${titre}" --body "${corps}"
+          fi

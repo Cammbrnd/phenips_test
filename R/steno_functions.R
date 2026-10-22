@@ -1,32 +1,58 @@
 # =============================================================================
 # STENO-DJ — Phenologie du stenographe (Ips sexdentatus) — France metropolitaine
-# v1 — SAFRAN via API GeoSAS INRAE | Architecture dalles + cache CSV
+# v2 — regles alignees sur Pineau et al. (2016) | SAFRAN via API GeoSAS INRAE
 # -----------------------------------------------------------------------------
 # POURQUOI CE SCRIPT N'UTILISE PAS barrks
 #   barrks n'implemente que des modeles calibres pour Ips typographus
 #   (phenips, phenips-clim, rity, chapy, lange, bso). Il n'existe aucun modele
 #   publie "cle en main" pour Ips sexdentatus. On implemente donc un modele
 #   degres-jours explicite, calibre sur les parametres thermiques mesures en
-#   laboratoire sur pin maritime par Pineau et al. (2017).
+#   laboratoire sur pin maritime par Pineau et al. (2016).
 #
-# PARAMETRES BIOLOGIQUES (sources)
-#   Seuil inferieur de developpement  : 10.9 C   (Pineau et al. 2017)
-#   Seuil superieur de developpement  : 36.0 C   (Pineau et al. 2017)
-#   Optimum thermique                 : 29.0 C   (Pineau et al. 2017)
-#   Constante thermique 1 generation  : 517 DJ   (Pineau et al. 2017)
-#   Declenchement du 1er essaimage    : Tair ~20 C plusieurs jours consecutifs,
-#                                       sans pluie ni gelee nocturne
-#                                       (Ephytia/DSF, fiche Stenographe)
-#   Nb de generations attendu         : 2/an en zone temperate, 3 en annee
-#                                       chaude ou en zone meridionale
-#                                       (Ephytia/DSF ; Pineau et al. 2017 pour
-#                                        le Sud-Ouest)
+# REFERENCES
+#   Pineau X. et al. (2016). Effect of temperature on the reproductive success,
+#     developmental rate and brood characteristics of Ips sexdentatus (Boern.).
+#     Agricultural and Forest Entomology, doi:10.1111/afe.12177
+#     (= chapitre III de la these : Pineau X., 2017, Univ. Orleans).
+#
+# PARAMETRES BIOLOGIQUES (Pineau et al. 2016 ; pages = these)
+#   Seuil inferieur de developpement  : 10.9 C   (modele lineaire ; 9.1 C avec
+#                                                 Logan/Lactin) (p. 118)
+#   Constante thermique 1 generation  : 506 +/- 7 DJ (resultats et calcul des
+#                                                 generations, p. 118 ; le resume
+#                                                 et la synthese disent 517 DJ)
+#                                       = installation des parents -> emergence
+#                                       des jeunes adultes
+#   Optimum de developpement          : 29 C (Logan/Lactin, p. 118)
+#   Seuil superieur de developpement  : 36 C (36.3 +/- 7.2) EXTRAPOLE : la
+#                                       temperature maxi testee est 25.5 C
+#   Debut du vol de printemps         : Tmax > 18 C pendant 2 jours consecutifs
+#                                       (p. 117) ; c'est aussi le critere de
+#                                       depart du cumul de DJ dans la these
+#   Calcul des DJ (these)             : DJ = somme[(Tmax + Tmin)/2 - 10.9],
+#                                       jour a 0 si la moyenne est < seuil ;
+#                                       generations = cumul / K  (p. 117)
+#   Temperature utilisee (these)      : temperature de l'AIR (station INRA
+#                                       Cestas, 1996-2013)
+#   Resultat de reference             : 2.2 +/- 0.4 generations/an en Aquitaine ;
+#                                       2 en annee normale, 3 quand la
+#                                       temperature moyenne annuelle atteint
+#                                       14 C (2003, 2006, 2011) (p. 118, 121)
+#
+#   Ce que la these NE donne PAS (volontairement absent du modele par defaut) :
+#     - duree de maturation des jeunes adultes avant la ponte suivante
+#     - somme thermique prealable au vol (type PHENIPS)
+#     - arret automnal de la ponte (photoperiode) : hypothese de Vallet (1981),
+#       jamais testee ; aucune diapause observee en elevage a 14 h:10, 25.5 C
+#   Ces trois points restent disponibles comme parametres (valeurs neutres par
+#   defaut) pour des scenarios de sensibilite.
 #
 #   /!\ A la difference de PHENIPS (typographe), il n'existe PAS de modele
-#       valide de terrain pour le stenographe. Ce script produit un INDICATEUR
-#       d'aide a la decision (dates de vol probables, nb de generations
-#       potentielles), pas une prediction validee. Toute utilisation en appui
-#       technique doit s'accompagner d'un piegeage de controle.
+#       valide de terrain pour le stenographe. Les generations calculees sont des
+#       MAXIMA THERMIQUES (hotes toujours disponibles, pas d'arret photoperiodique)
+#       et ce script produit un INDICATEUR d'aide a la decision, pas une
+#       prediction validee. Toute utilisation en appui technique doit
+#       s'accompagner d'un piegeage de controle.
 #
 # -----------------------------------------------------------------------------
 # Source meteo : API OGC EDR GeoSAS INRAE  (identique au script PHENIPS)
@@ -135,62 +161,89 @@ dir.create(DIR_CACHE, showWarnings = FALSE, recursive = TRUE)
 # 1bis. PARAMETRES BIOLOGIQUES DU STENOGRAPHE
 # =============================================================================
 # Tout est regroupe ici : c'est le seul bloc a toucher pour recalibrer.
-# Les valeurs marquees [PUBLIE] sont issues de la litterature ;
-# les valeurs marquees [EXPERT] sont des hypotheses de travail a calibrer
-# sur piegeage local (pheromone : ipsdienol / cis-verbenol).
+# [THESE]  = valeur de Pineau et al. (2016) / these Pineau (2017)
+# [NEUTRE] = parametre conserve pour des scenarios de sensibilite, mais regle
+#            sur une valeur sans effet car la these ne le fournit pas
+# [EXPERT] = hypothese de travail
 
 STENO <- list(
-  # --- Developpement (Pineau et al. 2017, AFE, pin maritime) ---
-  T_MIN_DEV    = 10.9,   # [PUBLIE] seuil inferieur de developpement (C)
-  T_MAX_DEV    = 36.0,   # [PUBLIE] seuil superieur (cutoff horizontal) (C)
-  T_OPT        = 29.0,   # [PUBLIE] optimum (informatif, non utilise en DJ lineaire)
-  DJ_GEN       = 517,    # [PUBLIE] DJ pour un developpement complet oeuf -> adulte
-  
-  # --- Maturation / alimentation complementaire avant nouvel essaimage ---
-  # Aucune valeur publiee pour I. sexdentatus. Le cycle effectif retenu est donc
-  # DJ_GEN + DJ_MATURATION : les 517 DJ couvrent oeuf -> adulte, la maturation
-  # couvre l'alimentation complementaire, la dispersion, le forage et
-  # l'accouplement avant la ponte suivante. A 0, le modele enchaine les
-  # generations instantanement et surestime le voltinisme.
-  DJ_MATURATION = 100,   # [EXPERT] cycle effectif = 617 DJ
-  
-  # --- Essaimage : somme thermique prealable (structure PHENIPS) ---
-  # Le declenchement combine DEUX conditions, comme dans Baier et al. (2007) :
-  #   (a) une somme thermique sous ecorce accumulee depuis DOY_DEB_CUMUL
-  #       doit atteindre DJ_VOL  -> donne le gradient spatial (latitude,
-  #       altitude, continentalite)
-  #   (b) la journee elle-meme doit etre volable : Tair max >= SEUIL_VOL,
-  #       sans gelee -> donne la date exacte de declenchement
-  # PHENIPS utilise 140 DJ base 8.3 C depuis le 1er avril + Tair max 16.5 C.
-  # Aucun equivalent publie pour le stenographe : DJ_VOL est le parametre a
-  # calibrer en priorite (voir calibrer_seuil_vol()).
-  DOY_DEB_CUMUL = 1,     # [EXPERT] debut du cumul prevol (1 = 1er janvier)
-  DJ_VOL       = 120,    # [EXPERT] somme thermique prevol (base T_MIN_DEV)
-  SEUIL_VOL    = 20.0,   # [PUBLIE/qualitatif] Tair max declenchant le vol (C)
-  SEUIL_GEL    = 0.0,    # [EXPERT] Tair min en dessous de laquelle le vol est nul
-  DOY_MIN_VOL  = 46,     # [EXPERT] garde-fou : pas d'essaimage avant le 15/02
-  
+  # --- Developpement (Pineau et al. 2016, pin maritime, 5 temperatures) ---
+  METHODE_DJ   = "moyenne", # [THESE] "moyenne" : DJ = (Tmax+Tmin)/2 - T_MIN_DEV
+                            #         (McMaster & Wilhelm, comme dans la these)
+                            #         "sinus" : methode sinus + cutoff T_MAX_DEV
+                            #         (ancienne version, pour comparaison)
+  T_MIN_DEV    = 10.9,   # [THESE] seuil inferieur, modele lineaire (9.1 en Logan)
+  T_OPT        = 29.0,   # [THESE] optimum (informatif)
+  T_CUTOFF     = Inf,    # [THESE] pas de plafond dans la formule de la these ;
+                         #         mettre 29 pour tester un plafond a l'optimum
+  T_MAX_DEV    = 36.0,   # [THESE, EXTRAPOLE] utilise seulement si METHODE_DJ="sinus"
+                         #         (max teste : 25.5 C)
+  DJ_GEN       = 506,    # [THESE] 506 +/- 7 DJ : installation des parents ->
+                         #         emergence des jeunes adultes (517 dans le resume)
+
+  # --- Maturation avant la ponte suivante ---
+  # La these ne la quantifie pas : les 506 DJ vont de l'installation des parents
+  # a l'emergence, et la these enchaine les generations sur cette seule somme.
+  # Valeur > 0 = scenario de sensibilite (ex. 100) : reduit le voltinisme.
+  DJ_MATURATION = 0,     # [NEUTRE] cycle effectif = DJ_GEN + DJ_MATURATION
+
+  # --- Debut de l'activite : critere de la these ---
+  # Vol de printemps : Tmax (air) > SEUIL_VOL pendant N_JOURS_VOL jours
+  # consecutifs. Le cumul de DJ du cycle demarre ce jour-la.
+  SEUIL_VOL    = 18.0,   # [THESE] Tmax air (C) ; critere strict ">" dans la these
+  N_JOURS_VOL  = 2L,     # [THESE] nb de jours consecutifs
+  DOY_MIN_VOL  = 1,      # [NEUTRE] garde-fou calendaire (ancienne valeur : 46)
+  SEUIL_GEL    = -Inf,   # [NEUTRE] Tmin air minimale pour voler (ancienne valeur : 0)
+
+  # --- Somme thermique prealable au vol (structure PHENIPS) ---
+  # Absente de la these : desactivee (DJ_VOL = 0). Conservee pour
+  # calibrer_seuil_vol() et pour des scenarios.
+  DOY_DEB_CUMUL = 1,     # [NEUTRE] debut du cumul prevol (1 = 1er janvier)
+  DJ_VOL       = 0,      # [NEUTRE] somme thermique prevol (ancienne valeur : 120)
+
   # --- Arret d'initiation des generations (photoperiode) ---
-  # Ephytia : vols en continu jusqu'a octobre environ. 12 h de jour ~ 1er octobre
-  # a 45 N. Au-dela, la descendance hiverne (larve/nymphe/jeune adulte).
-  DL_INIT_MIN  = 12.0,   # [EXPERT] duree du jour mini pour initier une generation
-  
+  # Hypothese de Vallet (1981), jamais testee (aucune diapause observee en
+  # elevage a 14 h:10, 25.5 C). Desactivee : les generations calculees sont donc
+  # des maxima thermiques. Scenario : 12 h (~1er octobre a 45 N).
+  DL_INIT_MIN  = 0,      # [NEUTRE] duree du jour mini pour initier une generation
+
   # --- Divers ---
   N_GEN_MAX    = 4       # nb max de generations suivies dans les sorties
+                         # (these : pas de 4e generation en Aquitaine ; CLIMEX 3-5
+                         #  sur le pourtour mediterraneen)
 )
 
 # Coefficient d'amortissement du terme radiatif de l'equation de Baier (2007),
-# pour tenir compte de l'ecorce epaisse et fissuree du bas de tronc des pins,
-# ou se developpe le stenographe. Voir le commentaire detaille de temp_ecorce().
+# utilise UNIQUEMENT si exposition = "sunny". La these travaille sur la
+# temperature de l'AIR (exposition = "shaded", valeur par defaut desormais) ;
+# "sunny" reste disponible comme scenario de sensibilite (temperature sous
+# ecorce, hypothese non validee pour le pin). Voir le commentaire de temp_ecorce().
 #   1.00 = equation de Baier telle quelle (epicea, ecorce fine)  -> borne haute
-#   0.50 = hypothese de travail par defaut                       -> ~+2 a +4 C
+#   0.50 = hypothese de travail                                  -> ~+2 a +4 C
 #   0.20 = proche des mesures de phloeme de pin (+1 a +2 C)      -> borne basse
 #   0.00 = equivalent a exposition="shaded"
 K_ECORCE <- 0.2   # [EXPERT] a calibrer sur sondes sous ecorce
 
-cat("=== STENO-DJ — Ips sexdentatus — France metropolitaine (SAFRAN) v1 ===\n")
+# --- Scenarios de production : marges d'erreur de la these (Pineau et al. 2016) ---
+# Seuls les parametres publies AVEC une marge d'erreur sont modifies :
+#   seuil inferieur de developpement : 10.9 +/- 0.2 C
+#   constante thermique              : 506 +/- 7 DJ
+# "pire"       = developpement le plus rapide (seuil bas, constante basse)
+#                -> le plus de generations / le vol le plus precoce
+# "moyen"      = valeurs centrales (scenario de reference)
+# "moins_pire" = developpement le plus lent (seuil haut, constante haute)
+# Attention : ces marges sont etroites (quelques % de DJ). Elles ne couvrent NI la
+# temperature sous ecorce, NI la maturation, NI la photoperiode, NI la variabilite
+# inter-annuelle (2.2 +/- 0.4 generations) : voir les scenarios de sensibilite.
+SCENARIOS <- list(
+  pire       = list(T_MIN_DEV = 10.7, DJ_GEN = 499),
+  moyen      = list(T_MIN_DEV = 10.9, DJ_GEN = 506),
+  moins_pire = list(T_MIN_DEV = 11.1, DJ_GEN = 513)
+)
+
+cat("=== STENO-DJ — Ips sexdentatus — France metropolitaine (SAFRAN) v2 ===\n")
 cat(glue("  Periode    : {DATE_DEB} -> {DATE_FIN_SAFRAN}\n"))
-cat(glue("  Modele     : degres-jours | seuil {STENO$T_MIN_DEV} C | ",
+cat(glue("  Modele     : degres-jours ({STENO$METHODE_DJ}) | seuil {STENO$T_MIN_DEV} C | ",
          "{STENO$DJ_GEN} DJ/generation\n"))
 cat(glue("  Resolution : {SAFRAN_RES/1000} km | Dalles : {DALLE_KM}x{DALLE_KM} km\n"))
 cat(glue("  Cache      : {DIR_CACHE}/\n\n"))
@@ -378,6 +431,22 @@ dj_sinus <- function(tmin, tmax, TL, TU) {
   dj
 }
 
+#' Degres-jours journaliers — methode de la these (McMaster & Wilhelm 1997)
+#' DJ = (Tmax + Tmin)/2 - TL, ramene a 0 si la moyenne est sous le seuil.
+#' TU = plafond eventuel de la moyenne (Inf = aucun, comme dans la these).
+dj_moyenne <- function(tmin, tmax, TL, TU = Inf) {
+  pmax(pmin((tmin + tmax) / 2, TU) - TL, 0)   # NA propage
+}
+
+#' Aiguillage selon par$METHODE_DJ ("moyenne" = these, "sinus" = ancienne version)
+dj_jour <- function(tmin, tmax, par = STENO) {
+  if (identical(par$METHODE_DJ, "sinus")) {
+    dj_sinus(tmin, tmax, par$T_MIN_DEV, par$T_MAX_DEV)
+  } else {
+    dj_moyenne(tmin, tmax, par$T_MIN_DEV, par$T_CUTOFF)
+  }
+}
+
 
 # =============================================================================
 # 8. MODELE STENO-DJ
@@ -386,25 +455,31 @@ dj_sinus <- function(tmin, tmax, TL, TU) {
 #' Modele phenologique degres-jours du stenographe
 #'
 #' Automate a etats parcourant la saison jour par jour, vectorise sur toutes
-#' les cellules SAFRAN simultanement.
+#' les cellules SAFRAN simultanement. Regles de Pineau et al. (2016) :
 #'
-#' Regles :
-#'   1. Essaimage initial : N_JOURS_VOL jours (non necessairement consecutifs)
-#'      avec Tair_max >= SEUIL_VOL et Tair_min > SEUIL_GEL, a partir de DOY_MIN_VOL.
-#'   2. Developpement : cumul de DJ (sinus simple, base T_MIN_DEV, cutoff
-#'      T_MAX_DEV) calcules sur la temperature SOUS ECORCE.
+#'   1. Debut d'activite : Tmax (air) > SEUIL_VOL pendant N_JOURS_VOL jours
+#'      consecutifs (a partir de DOY_MIN_VOL ; et, si DJ_VOL > 0, une fois la
+#'      somme thermique prevol atteinte). Les criteres de vol utilisent toujours
+#'      la temperature de l'AIR.
+#'   2. Developpement : cumul de DJ (par$METHODE_DJ, base T_MIN_DEV) depuis le
+#'      jour de debut d'activite, sur la temperature de l'air (exposition =
+#'      "shaded") ou sous ecorce (exposition = "sunny", scenario).
 #'   3. Generation achevee a DJ_GEN + DJ_MATURATION ; le reliquat de DJ est
 #'      reporte sur la generation suivante.
-#'   4. Une nouvelle generation n'est initiee que si la duree du jour est
-#'      >= DL_INIT_MIN ; sinon la descendance est consideree comme hivernante
-#'      et le cumul s'arrete pour l'annee.
+#'   4. Si DL_INIT_MIN > 0 : une nouvelle generation n'est initiee que si la
+#'      duree du jour est >= DL_INIT_MIN ; sinon la descendance est consideree
+#'      comme hivernante et le cumul s'arrete pour l'annee (desactive par defaut).
+#'
+#' Les generations obtenues sont des MAXIMA THERMIQUES : hotes toujours
+#' disponibles, aucun arret photoperiodique, aucune mortalite.
 #'
 #' @param meteo liste de SpatRasters : tmean, tmin, tmax, rad, daylength
-#' @param exposition "sunny" (defaut) ou "shaded"
+#' @param exposition "shaded" (defaut, temperature de l'air comme la these)
+#'        ou "sunny" (temperature sous ecorce, Baier et al. 2007)
 #' @param par liste de parametres biologiques (defaut : STENO)
 #' @return liste de SpatRasters + metadonnees
 modeliser_steno <- function(meteo,
-                            exposition = "sunny",
+                            exposition = "shaded",
                             k_ecorce   = K_ECORCE,
                             par        = STENO) {
   cat(glue(">> Modelisation STENO-DJ [exposition={exposition}]...\n"))
@@ -423,8 +498,15 @@ modeliser_steno <- function(meteo,
   # Temperature sous ecorce (min nocturne : pas de rayonnement -> tair)
   bt_min <- if (exposition == "sunny") 1.054 * m_tmin - 0.173 else m_tmin
   bt_max <- temp_ecorce(m_tmax, m_rad, exposition, k_ecorce)
-  cat(glue("   K_ECORCE = {k_ecorce} | echauffement median : ",
-           "+{round(k_ecorce * 0.0008518 * median(m_rad, na.rm = TRUE), 2)} C\n"))
+  if (exposition == "sunny") {
+    cat(glue("   K_ECORCE = {k_ecorce} | echauffement median : ",
+             "+{round(k_ecorce * 0.0008518 * median(m_rad, na.rm = TRUE), 2)} C\n"))
+  } else {
+    cat("   Temperature de l'air (comme la these) | aucun echauffement sous ecorce\n")
+  }
+  cat(glue("   DJ : {par$METHODE_DJ} | base {par$T_MIN_DEV} C | cycle ",
+           "{par$DJ_GEN + par$DJ_MATURATION} DJ | debut : Tmax > {par$SEUIL_VOL} C ",
+           "x {par$N_JOURS_VOL} j consecutifs\n"))
   
   # Cellules exploitables (au moins une donnee valide)
   valide <- rowSums(!is.na(m_tmax)) > 0
@@ -437,6 +519,7 @@ modeliser_steno <- function(meteo,
   dj_cum    <- rep(0,     n_c)   # DJ cumules depuis l'essaimage
   n_gen     <- rep(0L,    n_c)
   hiverne   <- rep(FALSE, n_c)   # plus d'initiation possible cette annee
+  serie_vol <- rep(0L,    n_c)   # nb de jours consecutifs volables
   doy_gen   <- matrix(NA_integer_, nrow = n_c, ncol = par$N_GEN_MAX)
   
   DJ_CYCLE <- par$DJ_GEN + par$DJ_MATURATION
@@ -449,19 +532,20 @@ modeliser_steno <- function(meteo,
     tmx <- m_tmax[, j]; tmn <- m_tmin[, j]; dl <- m_dl[, j]
     
     # Degres-jours du jour (sous ecorce) — sert au cumul prevol ET au cycle
-    dj <- dj_sinus(bt_min[, j], bt_max[, j], par$T_MIN_DEV, par$T_MAX_DEV)
+    dj <- dj_jour(bt_min[, j], bt_max[, j], par)
     dj[is.na(dj)] <- 0
     
-    # --- 1. Essaimage initial : somme thermique + journee volable ---
+    # --- 1. Debut d'activite : Tmax > seuil N jours de suite (+ prevol eventuel) ---
     if (doy >= par$DOY_DEB_CUMUL) {
       pre <- valide & !essaime
       dj_prevol[pre] <- dj_prevol[pre] + dj[pre]
     }
     
     vol_ok <- !is.na(tmx) & !is.na(tmn) &
-      tmx >= par$SEUIL_VOL & tmn > par$SEUIL_GEL
+      tmx > par$SEUIL_VOL & tmn > par$SEUIL_GEL
+    serie_vol <- ifelse(vol_ok, serie_vol + 1L, 0L)
     
-    nouveau <- valide & !essaime & vol_ok &
+    nouveau <- valide & !essaime & serie_vol >= par$N_JOURS_VOL &
       dj_prevol >= par$DJ_VOL & doy >= par$DOY_MIN_VOL
     if (any(nouveau)) {
       essaime[nouveau]   <- TRUE
@@ -478,14 +562,14 @@ modeliser_steno <- function(meteo,
     # --- 3. Generation achevee ---
     fini <- actif & dev_cur >= 1
     if (any(fini)) {
-      # une seule generation par jour au maximum (DJ journalier << 517)
+      # une seule generation par jour au maximum (DJ journalier << DJ_GEN)
       n_gen[fini] <- n_gen[fini] + 1L
       idx <- which(fini)
       rang <- pmin(n_gen[idx], par$N_GEN_MAX)
       doy_gen[cbind(idx, rang)] <- doy
       
-      # 4. Nouvelle generation initiee seulement si photoperiode suffisante
-      peut <- fini & !is.na(dl) & dl >= par$DL_INIT_MIN
+      # 4. Nouvelle generation (bloquee seulement si DL_INIT_MIN > 0 et jour trop court)
+      peut <- fini & (par$DL_INIT_MIN <= 0 | (!is.na(dl) & dl >= par$DL_INIT_MIN))
       dev_cur[peut] <- dev_cur[peut] - 1
       bloq <- fini & !peut
       dev_cur[bloq] <- 1
@@ -547,8 +631,8 @@ modeliser_steno <- function(meteo,
 #' @param meteo  liste de SpatRasters (sortie d'assembler_rasters_nationaux + daylength)
 #' @param seuils vecteur de valeurs de DJ_VOL a tester
 calibrer_seuil_vol <- function(meteo,
-                               seuils     = c(40, 60, 80, 100, 120, 160, 200, 250),
-                               exposition = "sunny",
+                               seuils     = c(0, 40, 80, 120, 160, 200),
+                               exposition = "shaded",
                                k_ecorce   = K_ECORCE,
                                par        = STENO) {
   dates <- as.Date(time(meteo$tmean))
@@ -565,14 +649,16 @@ calibrer_seuil_vol <- function(meteo,
   dj_pre <- matrix(0, nrow = n_c, ncol = n_j)
   vol    <- matrix(FALSE, nrow = n_c, ncol = n_j)
   acc    <- rep(0, n_c)
+  serie  <- rep(0L, n_c)
   for (j in seq_len(n_j)) {
-    d <- dj_sinus(bt_min[, j], bt_max[, j], par$T_MIN_DEV, par$T_MAX_DEV)
+    d <- dj_jour(bt_min[, j], bt_max[, j], par)
     d[is.na(d)] <- 0
     if (yday(dates[j]) >= par$DOY_DEB_CUMUL) acc <- acc + d
     dj_pre[, j] <- acc
-    vol[, j] <- !is.na(m_tmax[, j]) & !is.na(m_tmin[, j]) &
-      m_tmax[, j] >= par$SEUIL_VOL & m_tmin[, j] > par$SEUIL_GEL &
-      yday(dates[j]) >= par$DOY_MIN_VOL
+    ok_j  <- !is.na(m_tmax[, j]) & !is.na(m_tmin[, j]) &
+      m_tmax[, j] > par$SEUIL_VOL & m_tmin[, j] > par$SEUIL_GEL
+    serie <- ifelse(ok_j, serie + 1L, 0L)
+    vol[, j] <- serie >= par$N_JOURS_VOL & yday(dates[j]) >= par$DOY_MIN_VOL
   }
   
   res <- lapply(seuils, function(sv) {
@@ -666,12 +752,16 @@ doy_vers_date <- function(doy, annee = ANNEE) {
 #' @param steno    sortie de modeliser_steno()
 #' @param pas_essaimage largeur des classes de date d'essaimage, en jours
 #' @param grille   TRUE = exporte aussi la grille SAFRAN complete (1 entite/maille)
+#' @param scenario "moyen" (noms de fichiers inchanges) ou "pire" / "moins_pire"
+#'        (suffixe ajoute : steno_generations_pire_AAAAMMJJ.geojson)
 exporter_geojson <- function(steno,
                              dir_out        = DIR_OUT,
                              pas_essaimage  = 15,
-                             grille         = TRUE) {
-  cat(">> Export GeoJSON (WGS84)...\n")
+                             grille         = TRUE,
+                             scenario       = "moyen") {
+  cat(glue(">> Export GeoJSON (WGS84) — scenario {scenario}...\n"))
   date_j <- format(max(steno$dates), "%Y%m%d")
+  sfx    <- if (scenario == "moyen") "" else paste0("_", scenario)
   
   # ---------------------------------------------------------------------------
   # 1. Nombre de generations achevees — zones fusionnees
@@ -691,13 +781,17 @@ exporter_geojson <- function(steno,
     idx_couleur <- pmin(zones_gen$nb_generations + 1L, length(palette_gen))
     zones_gen$couleur <- palette_gen[idx_couleur]
     zones_gen$date_situation <- format(max(steno$dates), "%Y-%m-%d")
-    zones_gen$modele         <- "STENO-DJ v1"
+    zones_gen$modele         <- "STENO-DJ v2"
+    zones_gen$scenario       <- scenario
+    zones_gen$t_min_dev      <- steno$par$T_MIN_DEV
     zones_gen$exposition     <- steno$exposition
-    zones_gen$k_ecorce       <- steno$k_ecorce
+    zones_gen$k_ecorce       <- if (steno$exposition == "sunny") steno$k_ecorce else NA_real_
+    zones_gen$methode_dj     <- steno$par$METHODE_DJ
+    zones_gen$dj_gen         <- steno$par$DJ_GEN + steno$par$DJ_MATURATION
     zones_gen <- zones_gen[order(zones_gen$nb_generations), ]
     
     ecrire_geojson(zones_gen,
-                   file.path(dir_out, glue("steno_generations_{date_j}.geojson")))
+                   file.path(dir_out, glue("steno_generations{sfx}_{date_j}.geojson")))
   }
   
   # ---------------------------------------------------------------------------
@@ -734,13 +828,16 @@ exporter_geojson <- function(steno,
       pal_essaimage <- scales::col_numeric("YlOrRd", domain = range(zones_ess$doy_debut))
       zones_ess$couleur     <- pal_essaimage(zones_ess$doy_debut)
       zones_ess$annee       <- ANNEE
-      zones_ess$modele      <- "STENO-DJ v1"
+      zones_ess$modele      <- "STENO-DJ v2"
+      zones_ess$scenario    <- scenario
+      zones_ess$t_min_dev   <- steno$par$T_MIN_DEV
       zones_ess$seuil_vol_c <- steno$par$SEUIL_VOL
+      zones_ess$jours_vol   <- steno$par$N_JOURS_VOL
       zones_ess$dj_vol      <- steno$par$DJ_VOL
       zones_ess <- zones_ess[order(zones_ess$doy_debut), ]
       
       ecrire_geojson(zones_ess,
-                     file.path(dir_out, glue("steno_essaimage_{ANNEE}.geojson")))
+                     file.path(dir_out, glue("steno_essaimage{sfx}_{ANNEE}.geojson")))
     }
   }
   
@@ -782,7 +879,7 @@ exporter_geojson <- function(steno,
       g <- st_transform(g, 4326)
       
       ecrire_geojson(g, file.path(dir_out,
-                                  glue("steno_grille_safran_{date_j}.geojson")))
+                                  glue("steno_grille_safran{sfx}_{date_j}.geojson")))
     }
   }
   
@@ -811,8 +908,8 @@ carte_france <- function(rst_l93, titre, legende, palette,
     ) +
     labs(
       title    = titre,
-      subtitle = glue("STENO-DJ (Pineau et al. 2017) | SAFRAN INRAE | {date_label} | {ANNEE}"),
-      caption  = "Indicateur d'aide a la decision — non valide terrain | GeoSAS INRAE — CNPF/CRPF AuRA",
+      subtitle = glue("STENO-DJ (Pineau et al. 2016) | SAFRAN INRAE | {date_label} | {ANNEE}"),
+      caption  = "Maxima thermiques (hotes disponibles, sans photoperiode) — indicateur non valide terrain | GeoSAS INRAE — CNPF/CRPF AuRA",
       x = NULL, y = NULL
     ) +
     theme_minimal(base_size = 11) +
@@ -848,7 +945,7 @@ generer_cartes <- function(steno, dir_out = DIR_OUT) {
   carte_france(
     steno$gen_cont,
     titre   = glue("Generations cumulees — Ips sexdentatus — {date_label}"),
-    legende = "Generations (entier = generation achevee)",
+    legende = "Generations thermiques (entier = generation achevee)",
     palette = c("#F7FCF0", "#BAE4BC", "#7BCCC4", "#F39C12", "#C0392B", "#6E0000"),
     breaks  = c(0, 1, 2, 3, 4, 5),
     date_label = date_label,
@@ -858,7 +955,7 @@ generer_cartes <- function(steno, dir_out = DIR_OUT) {
   # 3. Degres-jours cumules
   carte_france(
     steno$dj_cum,
-    titre   = glue("Degres-jours cumules (base {STENO$T_MIN_DEV} C, sous ecorce) — {date_label}"),
+    titre   = glue("Degres-jours cumules (base {STENO$T_MIN_DEV} C, {STENO$METHODE_DJ}) — {date_label}"),
     legende = "DJ cumules depuis l'essaimage",
     palette = c("grey95", "#FFF3B0", "#35B779FF", "#31688EFF", "#440154FF"),
     date_label = date_label,
@@ -891,7 +988,9 @@ synthese_console <- function(steno) {
   
   n_valide <- sum(steno$valide)
   cat(glue("  Date        : {format(max(steno$dates), '%d/%m/%Y')}\n"))
-  cat(glue("  Exposition  : {steno$exposition} | K_ECORCE = {steno$k_ecorce}\n"))
+  cat(glue("  Exposition  : {steno$exposition}",
+           "{if (steno$exposition == 'sunny') paste0(' | K_ECORCE = ', steno$k_ecorce) else ' (air)'}",
+           " | DJ {steno$par$METHODE_DJ} | cycle {steno$par$DJ_GEN + steno$par$DJ_MATURATION} DJ\n"))
   cat(glue("  Cellules    : {n_valide} valides / {ncell(RST_FRANCE)} total\n\n"))
   
   ons <- values(steno$onset)[, 1]
@@ -906,10 +1005,10 @@ synthese_console <- function(steno) {
   } else cat("\n")
   
   dj <- values(steno$dj_cum)[, 1]
-  cat("  --- Degres-jours cumules (sous ecorce) ---\n")
+  cat("  --- Degres-jours cumules ---\n")
   cat(glue("  Moyenne : {round(mean(dj, na.rm=TRUE))} DJ | ",
            "Max : {round(max(dj, na.rm=TRUE))} DJ\n"))
-  cat(glue("  Equivalent : {round(mean(dj, na.rm=TRUE)/steno$par$DJ_GEN, 2)} generation(s) en moyenne\n\n"))
+  cat(glue("  Equivalent : {round(mean(dj, na.rm=TRUE)/(steno$par$DJ_GEN + steno$par$DJ_MATURATION), 2)} generation(s) en moyenne\n\n"))
   
   ng <- values(steno$n_gen)[, 1]
   cat("  --- Generations achevees ---\n")
@@ -924,7 +1023,7 @@ synthese_console <- function(steno) {
   if (n_h > 0)
     cat(glue("  Descendance hivernante (photoperiode) : {n_h} cellules\n\n"))
   
-  cat("  /!\\ Indicateur non valide terrain — a croiser avec un piegeage\n")
+  cat("  /!\\ Maxima thermiques, indicateur non valide terrain — a croiser avec un piegeage\n")
   cat("      pheromonal local (ipsdienol / cis-verbenol).\n")
   cat(strrep("=", 62), "\n\n")
 }
@@ -974,17 +1073,18 @@ diagnostiquer_rayonnement <- function(dalles = DALLES[1:min(5, nrow(DALLES)), ])
 # =============================================================================
 
 #' Pipeline complet France entiere
-#' @param exposition "sunny" (defaut) ou "shaded" (scenario prudent)
+#' @param exposition "shaded" (defaut : temperature de l'air, comme la these)
+#'        ou "sunny" (scenario sous ecorce)
 #' @param pas_essaimage largeur (jours) des classes de date d'envol en GeoJSON
 #' @param grille    TRUE = exporte aussi la grille SAFRAN complete en GeoJSON
 #' @param force_dl   TRUE = purge le cache et retelecharge
-pipeline_steno <- function(exposition   = "sunny",
+pipeline_steno <- function(exposition   = "shaded",
                            k_ecorce     = K_ECORCE,
                            pas_essaimage = 15,
                            grille       = TRUE,
                            force_dl     = FALSE) {
   cat("\n", strrep("=", 62), "\n")
-  cat("  STENO-DJ — Ips sexdentatus — France metropolitaine — SAFRAN v1\n")
+  cat("  STENO-DJ — Ips sexdentatus — France metropolitaine — SAFRAN v2\n")
   cat(strrep("=", 62), "\n\n")
   t0 <- proc.time()
   
@@ -1021,6 +1121,78 @@ pipeline_steno <- function(exposition   = "sunny",
 
 
 # =============================================================================
+# 13bis. VALIDATION PONCTUELLE (une station, une annee) — table 5 de la these
+# =============================================================================
+
+#' Dates de fin de generation attendues par la these (Pineau 2017, table 5,
+#' station INRA Cestas, temperature de l'air) — pour verification du code
+CESTAS_REF <- list(
+  "2002" = list(debut = "2002-03-12", fin_gen = c("2002-07-13", "2002-09-13")),
+  "2003" = list(debut = "2003-03-10", fin_gen = c("2003-06-22", "2003-08-09", "2003-10-03"))
+)
+
+#' Applique les regles du modele a UNE serie journaliere (air) et renvoie les
+#' dates de debut d'activite et de fin de chaque generation.
+#'
+#' Memes regles que modeliser_steno() (debut Tmax > SEUIL_VOL x N_JOURS_VOL jours
+#' consecutifs, DJ cumules, reliquat reporte), sans raster : sert a verifier le
+#' code sur les donnees de la station de Cestas.
+#'
+#' @param d data.frame journalier avec colonnes date (Date), tmin, tmax (C, air)
+#' @param par liste de parametres (defaut : STENO)
+#' @param ref reference a comparer (element de CESTAS_REF) ; NULL = aucune
+#' @return liste(debut, fin_gen, n_gen, dj_total)
+generations_point <- function(d, par = STENO, ref = NULL) {
+  d <- d[order(d$date), ]
+  dj <- dj_jour(d$tmin, d$tmax, par)
+  dj[is.na(dj)] <- 0
+  doy <- as.integer(format(d$date, "%j"))
+  vol <- !is.na(d$tmax) & !is.na(d$tmin) & d$tmax > par$SEUIL_VOL & d$tmin > par$SEUIL_GEL
+  
+  cycle <- par$DJ_GEN + par$DJ_MATURATION
+  actif <- FALSE; serie <- 0L; prevol <- 0; dev <- 0; dj_tot <- 0
+  debut <- as.Date(NA); fin <- as.Date(character(0))
+  
+  for (i in seq_len(nrow(d))) {
+    if (!actif) {
+      if (doy[i] >= par$DOY_DEB_CUMUL) prevol <- prevol + dj[i]
+      serie <- if (vol[i]) serie + 1L else 0L
+      if (serie >= par$N_JOURS_VOL && prevol >= par$DJ_VOL && doy[i] >= par$DOY_MIN_VOL) {
+        actif <- TRUE; debut <- d$date[i]
+      }
+    }
+    if (actif) {
+      dj_tot <- dj_tot + dj[i]
+      dev    <- dev + dj[i] / cycle
+      if (dev >= 1) {
+        fin <- c(fin, d$date[i])
+        dev <- dev - 1
+      }
+    }
+  }
+  
+  res <- list(debut = debut, fin_gen = fin, n_gen = length(fin), dj_total = round(dj_tot))
+  
+  cat(glue("  Debut d'activite : {format(debut, '%d/%m/%Y')} | ",
+           "{res$n_gen} generation(s) achevee(s) | {res$dj_total} DJ cumules"), "\n", sep = "")
+  for (g in seq_along(fin))
+    cat(glue("    Fin generation {g} : {format(fin[g], '%d/%m/%Y')}"), "\n", sep = "")
+  
+  if (!is.null(ref)) {
+    cat("  Reference these :\n")
+    cat(glue("    Debut : {format(as.Date(ref$debut), '%d/%m/%Y')}"), "\n", sep = "")
+    for (g in seq_along(ref$fin_gen)) {
+      obs <- if (g <= length(fin)) fin[g] else as.Date(NA)
+      ecart <- as.integer(obs - as.Date(ref$fin_gen[g]))
+      cat(glue("    Fin generation {g} : {format(as.Date(ref$fin_gen[g]), '%d/%m/%Y')} ",
+               "(ecart modele : {ifelse(is.na(ecart), 'non atteinte', paste0(ecart, ' j'))})"), "\n", sep = "")
+    }
+  }
+  invisible(res)
+}
+
+
+# =============================================================================
 # 14. LANCEMENT
 # =============================================================================
 
@@ -1050,17 +1222,17 @@ if (FALSE) {
 # DESACTIVE : la version production passe par R/pipeline_steno.R (charge le
 # jeu SAFRAN partage, appelle modeliser_steno() directement).
 if (FALSE) {
-  # Scenario central : ecorce epaisse de bas de tronc, amortissement 0.2
-  steno <- pipeline_steno(exposition = "sunny", k_ecorce = 0.2)
+  # Scenario central = these : temperature de l'air, 506 DJ, base 10.9 C
+  steno <- pipeline_steno(exposition = "shaded")
 
-  # Encadrement de l'incertitude sur la temperature sous ecorce :
-  #   borne haute = equation de Baier brute (epicea, ecorce fine)
-  #   borne basse = temperature de l'air (aucun echauffement radiatif)
-  # steno_haut <- pipeline_steno(exposition = "sunny", k_ecorce = 1.0)
-  # steno_bas  <- pipeline_steno(exposition = "shaded")
+  # Scenarios de sensibilite (a ne comparer qu'APRES la validation Cestas) :
+  #   temperature sous ecorce : pipeline_steno(exposition = "sunny", k_ecorce = 0.2)
+  #   maturation              : modeliser_steno(meteo, par = modifyList(STENO, list(DJ_MATURATION = 100)))
+  #   photoperiode            : modeliser_steno(meteo, par = modifyList(STENO, list(DL_INIT_MIN = 12)))
+  #   methode sinus           : modeliser_steno(meteo, par = modifyList(STENO, list(METHODE_DJ = "sinus")))
 }
 
-# --- Calibration du seuil d'essaimage DJ_VOL ---
+# --- Sensibilite du seuil prevol DJ_VOL (0 = these ; >0 = scenario type PHENIPS) ---
 if (FALSE) {
   dt    <- lire_cache_complet()
   meteo <- assembler_rasters_nationaux(dt)
@@ -1086,8 +1258,26 @@ if (FALSE) {
 # arbre sur pied (tronc ombrage par le houppier) : ce sont deux regimes
 # thermiques distincts, et le stenographe exploite les deux.
 
+# --- Validation sur la station de Cestas (a faire AVANT toute carte) ---
+# Il faut les Tmin/Tmax journalieres de l'air de Cestas (INRA/Meteo-France) ou
+# de la maille SAFRAN la plus proche. Attendu : 2 generations en 2002,
+# 3 en 2003 (voir CESTAS_REF). Ecart acceptable : quelques jours.
+if (FALSE) {
+  cestas <- read.csv("cestas_2002_2003.csv")   # colonnes : date, tmin, tmax
+  cestas$date <- as.Date(cestas$date)
+  for (a in c("2002", "2003")) {
+    cat(glue("\n--- Cestas {a} ---\n"))
+    generations_point(cestas[format(cestas$date, "%Y") == a, ], ref = CESTAS_REF[[a]])
+  }
+}
+
 # --- Test unitaire rapide du calcul de degres-jours ---
 if (FALSE) {
+  # Methode de la these : (Tmax + Tmin)/2 - 10.9
+  stopifnot(abs(dj_moyenne(15, 25, 10.9) - 9.1) < 1e-9)
+  stopifnot(dj_moyenne(2, 8, 10.9) == 0)
+  stopifnot(abs(dj_moyenne(30, 42, 10.9, TU = 29) - (29 - 10.9)) < 1e-9)
+  # Methode sinus (ancienne version)
   # Journee 15-25 C, seuil 10.9 : DJ attendu ~ 9.1 (moyenne 20 - 10.9)
   stopifnot(abs(dj_sinus(15, 25, 10.9, 36) - 9.1) < 0.3)
   # Journee entierement sous le seuil

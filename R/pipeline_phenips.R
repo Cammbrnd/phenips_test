@@ -1,10 +1,14 @@
 # =============================================================================
 # PIPELINE PHENIPS — reutilise le jeu de donnees SAFRAN partage
 # -----------------------------------------------------------------------------
-# R/phenips_functions.R est deja allege : ne contient que modeliser_phenips(),
-# produire_geojson_generations(), produire_geojson_onset() et les helpers
-# barrks (get_btmean, get_gen1, get_gen_rst, inspect_barrks). Les fonctions
-# de telechargement/cache/assemblage sont dans R/safran_common.R.
+# Pour CHAQUE scenario d'exposition (sunny, shaded) :
+#   - classes de generations   phenips_generations_<scenario>_<date>.geojson
+#   - premier essaimage        phenips_onset_<scenario>_<date>.geojson
+#   - indice continu           phenips_indice_<scenario>_<date>.geojson
+# puis copie vers les noms stables *_latest.geojson lus par l'app, ecriture de
+# phenips_meta.json, et purge des anciens fichiers dates.
+# Les fonctions sont dans R/phenips_functions.R, le telechargement et le
+# controle qualite SAFRAN dans R/safran_common.R et R/fetch_safran.R.
 # =============================================================================
 
 source("R/safran_common.R")
@@ -13,20 +17,41 @@ source("R/phenips_functions.R")
 meteo_wrap <- readRDS("data/cache_meteo/meteo_national.rds")
 meteo      <- lapply(meteo_wrap, terra::unwrap)
 
-pheno <- modeliser_phenips(meteo, exposure = "sunny", scenario = "max")
+# [v3] On ne garde que les mailles SAFRAN qui croisent l'essence-hote (BD Foret IGN)
+source("R/masques.R")
+meteo <- appliquer_masque(meteo, charger_masque("epicea", meteo$tmean), nom = "epicea")
 
-produire_geojson_generations(pheno)
-produire_geojson_onset(pheno)
-synthese_console(pheno)
+date_donnees <- max(as.Date(time(meteo$tmean)))
+cat(glue(">> PHENIPS : donnees SAFRAN jusqu'au {date_donnees}\n\n"))
 
-copier_vers_nom_stable <- function(pattern, nom_stable) {
-  fichiers <- list.files(DIR_OUT, pattern = pattern, full.names = TRUE)
-  if (length(fichiers) == 0) return(invisible(NULL))
-  plus_recent <- fichiers[which.max(file.mtime(fichiers))]
-  file.copy(plus_recent, file.path(DIR_OUT, nom_stable), overwrite = TRUE)
-  cat(glue::glue("  Copie stable : {basename(plus_recent)} -> {nom_stable}\n"))
+for (v in names(VARIANTES_PHENIPS)) {
+  cat(glue("\n######## Scenario {v} : {VARIANTES_PHENIPS[[v]]$libelle} ########\n\n"))
+  param <- VARIANTES_PHENIPS[[v]]
+  pheno <- modeliser_phenips(meteo, exposure = param$exposure, scenario = param$scenario)
+
+  ch_gen <- produire_geojson_generations(pheno, variante = v)
+  ch_ons <- produire_geojson_onset(pheno,       variante = v)
+  ch_idx <- produire_geojson_indice(pheno,      variante = v)
+
+  # [P2] on publie le fichier qu'on vient d'ecrire, ou on retire le "latest"
+  publier_latest(ch_gen, glue("phenips_generations_{v}_latest.geojson"))
+  publier_latest(ch_ons, glue("phenips_onset_{v}_latest.geojson"))
+  publier_latest(ch_idx, glue("phenips_indice_{v}_latest.geojson"))
+
+  # Transition : l'ancienne app lit encore les noms sans suffixe (= sunny)
+  if (COMPAT_ANCIENS_NOMS && v == "sunny") {
+    publier_latest(ch_gen, "phenips_generations_latest.geojson")
+    publier_latest(ch_ons, "phenips_onset_latest.geojson")
+  }
+
+  # Diagnostic de log : il ne doit jamais faire echouer la publication
+  tryCatch(synthese_console(pheno),
+           error = function(e) message("  [INFO] synthese_console ignoree : ", conditionMessage(e)))
+
+  rm(pheno); invisible(gc())
 }
-copier_vers_nom_stable("^phenips_generations_.*\\.geojson$", "phenips_generations_latest.geojson")
-copier_vers_nom_stable("^phenips_onset_.*\\.geojson$",       "phenips_onset_latest.geojson")
+
+ecrire_meta_phenips(date_donnees, names(VARIANTES_PHENIPS))
+purger_fichiers_dates(garder = 4L)
 
 cat("\n>> PHENIPS termine.\n\n")

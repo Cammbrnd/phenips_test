@@ -13,6 +13,10 @@ source("R/chapy_functions.R")   # garde uniquement le modele + les exports GeoJS
 meteo_wrap <- readRDS("data/cache_meteo/meteo_national.rds")
 meteo      <- lapply(meteo_wrap, terra::unwrap)
 
+# [v3] On ne garde que les mailles SAFRAN qui croisent l'essence-hote (BD Foret IGN)
+source("R/masques.R")
+meteo <- appliquer_masque(meteo, charger_masque("epicea", meteo$tmean), nom = "epicea")
+
 pheno <- modeliser_chapy(meteo, mode = "max")
 
 produire_geojson_generations_chapy(pheno)
