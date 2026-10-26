@@ -234,6 +234,12 @@ couvertes et le nombre de mailles.
   comptée dès qu'elle a commencé (+0,5 pour une couvée sœur) ; STENO-DJ : générations achevées.
 - **doy\*** : jour de l'année du premier envol (PHENIPS-Clim : premier essaimage ; CHAPY et
   STENO-DJ : premier envol). Vide si le modèle n'atteint pas l'envol cette année-là.
+- **gen = 0 avec une date d'envol renseignée** : le vol de printemps a lieu mais aucune génération
+  n'est comptée cette année-là (surtout les années froides : ~3 % des lignes CHAPY dans les années
+  1960-70, < 1 % depuis 2020).
+- **STENO-DJ, dates précoces** : ~5 % des lignes ont un premier envol avant le jour 60 (journées
+  douces de fin d'hiver dépassant les seuils du modèle dans les mailles les plus chaudes) ; à lire
+  avec prudence, de préférence via la médiane ou la moyenne sur plusieurs années.
 - Chaque année est calculée de janvier à décembre, **sans lien avec l'année précédente** (même
   hypothèse que les cartes de l'année en cours).
 - Mêmes scénarios, mêmes masques et même contrôle qualité SAFRAN que les cartes de l'année en
@@ -246,7 +252,11 @@ couvertes et le nombre de mailles.
 Onglet Actions → « Mise à jour des 4 modèles » → *Run workflow* avec `historique` coché
 (`annee_debut`, `annee_fin`, `parallele` réglables). Un job par année (5 en parallèle par défaut,
 pour ne pas surcharger GeoSAS), puis un job d'assemblage qui commite `data/historique/`.
-Les années recalculées remplacent les anciennes lignes ; les autres sont conservées. Le job
+Les années recalculées remplacent les anciennes lignes ; les autres sont conservées.
+Le calcul complet 1960-2025 prend environ 6 h (≈ 16 min par année, 5 en parallèle ; la première
+exécution est plus longue car elle installe les packages R, ensuite mis en cache). Si un job reste
+bloqué (déjà vu une fois à l'installation de R), « Re-run failed jobs » relance uniquement l'année
+en cause : les autres résultats sont conservés. Le job
 `historique_diag` (case `historique_diag`) sonde GeoSAS (étendue temporelle, durée des requêtes)
 sans rien calculer.
 
