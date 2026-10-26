@@ -260,7 +260,7 @@ jobs:
     needs: historique_preparer
     if: ${{ inputs.historique }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 100
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJSON(inputs.parallele) }}
@@ -301,7 +301,9 @@ jobs:
 
   historique_assembler:
     needs: historique_annee
-    if: ${{ always() && inputs.historique && needs.historique_annee.result != 'cancelled' && needs.historique_annee.result != 'skipped' }}
+    # !cancelled() : l'assemblage tourne meme si une annee a echoue ou depasse son delai (job 'cancelled' par timeout),
+    # mais pas si le run entier est annule a la main
+    if: ${{ !cancelled() && inputs.historique && needs.historique_annee.result != 'skipped' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Cloner le depot
