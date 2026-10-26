@@ -1,0 +1,8 @@
+{
+  "date_construction": "2026-10-26",
+  "source": "Meteo-France (SAFRAN-ISBA) via GeoSAS INRAE ; masques IGN BD Foret V2",
+  "crs_xy": "EPSG:2154 (centre de maille 8 km)",
+  "phenips": {"annee_min": 2026, "annee_max": 2026, "n_annees": 1, "n_mailles": 3388, "n_lignes": 3388},
+  "chapy": {"annee_min": 2026, "annee_max": 2026, "n_annees": 1, "n_mailles": 3388, "n_lignes": 3388},
+  "steno": {"annee_min": 2026, "annee_max": 2026, "n_annees": 1, "n_mailles": 6331, "n_lignes": 6331}
+}
