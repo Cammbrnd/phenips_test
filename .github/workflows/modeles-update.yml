@@ -17,6 +17,10 @@ on:
         description: "Construit les masques epicea / pin (BD Foret IGN) dans data/masques/, sans modeles"
         type: boolean
         default: false
+      historique_diag:
+        description: "Historique 1960+ : diagnostic GeoSAS (couverture temporelle, debit), ecrit data/diag/"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # commit + push des GeoJSON
@@ -25,11 +29,13 @@ permissions:
 # [P15] Un seul run a la fois : un lancement manuel pendant le run du lundi
 # attend la fin du premier au lieu de lui faire concurrence au moment du push.
 concurrency:
-  group: maj-modeles
+  # Les runs "historique" (longs) ont leur propre file : ils ne bloquent pas le run du lundi.
+  group: ${{ (inputs.historique_diag) && 'maj-historique' || 'maj-modeles' }}
   cancel-in-progress: false
 
 jobs:
   update:
+    if: ${{ !inputs.historique_diag }}
     # Image figee : "ubuntu-latest" bascule vers Ubuntu 26 (octobre 2026). Les packages R
     # compiles (terra, sf) du cache sont lies aux bibliotheques systeme GDAL/PROJ de
     # l'image qui les a produits ; changer d'image sans changer le cache les casse.
@@ -186,3 +192,35 @@ jobs:
           else
             gh issue create --title "${titre}" --body "${corps}"
           fi
+
+  # ===========================================================================
+  # HISTORIQUE SAFRAN 1960 -> aujourd'hui (branche historique-1960)
+  # ===========================================================================
+  historique_diag:
+    if: ${{ inputs.historique_diag }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Cloner le depot
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Environnement R
+        uses: ./.github/actions/setup-r-env
+
+      - name: Diagnostic GeoSAS (couverture temporelle, debit)
+        run: Rscript R/diag_geosas_histo.R
+
+      - name: Publier le diagnostic (data/diag)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A -- data/diag
+          if git diff --cached --quiet; then echo "Rien a publier"; exit 0; fi
+          git commit -m "Diagnostic GeoSAS historique $(date -u +%Y-%m-%d)"
+          for essai in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep 15
+          done
+          exit 1
