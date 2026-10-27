@@ -507,9 +507,9 @@ server <- function(input, output, session) {
 
   mat_h <- reactive({
     d <- table_h()
-    validate(need(!is.null(d), "Tables historiques indisponibles (pas encore calculees ?)."))
+    shiny::validate(shiny::need(!is.null(d), "Tables historiques indisponibles (pas encore calculees ?)."))
     col <- col_h()
-    validate(need(col %in% names(d), "Colonne absente de la table."))
+    shiny::validate(shiny::need(col %in% names(d), "Colonne absente de la table."))
     matrice_h(d, col)
   })
 
@@ -536,13 +536,13 @@ server <- function(input, output, session) {
 
     if (vue == "annee") {
       an <- req(annee_h())
-      validate(need(as.character(an) %in% colnames(M), "Annee absente de la table."))
+      shiny::validate(shiny::need(as.character(an) %in% colnames(M), "Annee absente de la table."))
       v <- M[, as.character(an)]
       titre <- as.character(an)
     } else {
       per <- req(input$h_periode)
       cols <- which(mt$annees >= per[1] & mt$annees <= per[2])
-      validate(need(length(cols) >= 2, "Choisir une periode d'au moins 2 annees."))
+      shiny::validate(shiny::need(length(cols) >= 2, "Choisir une periode d'au moins 2 annees."))
       if (vue == "moyenne") {
         v <- rowMeans(M[, cols, drop = FALSE], na.rm = TRUE); v[is.nan(v)] <- NA
         titre <- sprintf("moyenne %d-%d", per[1], per[2])
