@@ -214,3 +214,58 @@ l'essence-hôte** :
   « Mise à jour des 4 modèles » → *Run workflow* avec `construire_masques` coché. Le workflow
   commite `data/masques/`. Les pipelines s'arrêtent avec un message clair si un masque manque.
 - Monochamus n'est pas masqué.
+
+## Historique 1960-2025 : générations et premier envol par maille
+
+Table annuelle, pour chaque maille SAFRAN (8 km) masquée par l'essence-hôte (cf. v3), du
+**nombre de générations** et de la **date du premier envol** de 1960 à 2025.
+
+| Modèle | Fichier | Colonnes (hors `annee`, `x`, `y`) |
+|---|---|---|
+| PHENIPS-Clim | `data/historique/phenips_annuel.csv.gz` | `gen_sunny`, `doy_sunny`, `gen_shaded`, `doy_shaded` |
+| CHAPY | `data/historique/chapy_annuel.csv.gz` | `gen`, `doy_envol` |
+| STENO-DJ | `data/historique/steno_annuel.csv.gz` | `gen_pire`, `doy_pire`, `gen_moyen`, `doy_moyen`, `gen_moins_pire`, `doy_moins_pire` |
+
+`data/historique/meta.json` donne la date de construction, la source et, par modèle, les années
+couvertes et le nombre de mailles.
+
+- **x, y** : centre de la maille en Lambert-93 (EPSG:2154). Maille de 8 km (x ± 4000 m, y ± 4000 m).
+- **gen\*** : nombre de générations au 31 décembre. PHENIPS-Clim et CHAPY : une génération est
+  comptée dès qu'elle a commencé (+0,5 pour une couvée sœur) ; STENO-DJ : générations achevées.
+- **doy\*** : jour de l'année du premier envol (PHENIPS-Clim : premier essaimage ; CHAPY et
+  STENO-DJ : premier envol). Vide si le modèle n'atteint pas l'envol cette année-là.
+- **gen = 0 avec une date d'envol renseignée** : le vol de printemps a lieu mais aucune génération
+  n'est comptée cette année-là (surtout les années froides : ~3 % des lignes CHAPY dans les années
+  1960-70, < 1 % depuis 2020).
+- **STENO-DJ, dates précoces** : ~5 % des lignes ont un premier envol avant le jour 60 (journées
+  douces de fin d'hiver dépassant les seuils du modèle dans les mailles les plus chaudes) ; à lire
+  avec prudence, de préférence via la médiane ou la moyenne sur plusieurs années.
+- Chaque année est calculée de janvier à décembre, **sans lien avec l'année précédente** (même
+  hypothèse que les cartes de l'année en cours).
+- Mêmes scénarios, mêmes masques et même contrôle qualité SAFRAN que les cartes de l'année en
+  cours. L'année en cours n'est pas incluse (elle est incomplète).
+- Source météo : SAFRAN (Météo-France) via GeoSAS INRAE ; la série GeoSAS démarre en août 1958,
+  d'où le début à 1960 (années civiles complètes).
+
+### Reconstruire la table
+
+Onglet Actions → « Mise à jour des 4 modèles » → *Run workflow* avec `historique` coché
+(`annee_debut`, `annee_fin`, `parallele` réglables). Un job par année (5 en parallèle par défaut,
+pour ne pas surcharger GeoSAS), puis un job d'assemblage qui commite `data/historique/`.
+Les années recalculées remplacent les anciennes lignes ; les autres sont conservées.
+Le calcul complet 1960-2025 prend environ 6 h (≈ 16 min par année, 5 en parallèle ; la première
+exécution est plus longue car elle installe les packages R, ensuite mis en cache). Si un job reste
+bloqué (déjà vu une fois à l'installation de R), « Re-run failed jobs » relance uniquement l'année
+en cause : les autres résultats sont conservés. Le job
+`historique_diag` (case `historique_diag`) sonde GeoSAS (étendue temporelle, durée des requêtes)
+sans rien calculer.
+
+Pour l'année en cours, `R/valider_historique.R` compare l'extraction par maille aux GeoJSON de
+production (annotations `VALIDATION` du job).
+
+### Onglet « Historique 1960-2025 » de l'app
+
+Carte d'une année (curseur animable), moyenne sur une période, ou tendance par décennie
+(régression linéaire maille par maille, grisage des tendances non significatives à p > 0,05) ;
+clic sur une maille pour afficher sa série temporelle face à la moyenne de toutes les mailles.
+L'app ne fait que lire les tables du dépôt (aucun calcul lourd).
