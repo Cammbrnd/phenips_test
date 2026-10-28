@@ -1,0 +1,144 @@
+
+==== Versions ==== 
+PHENTHAUproc 1.1.2 | terra 1.9.50 | R version 4.4.3 (2025-02-28) 
+
+==== A. load_test (donnees d'exemple FVA) ==== 
+names(fva) : tmean, tmax, tmin 
+head(time(fva$tmean)) : 2019-09-01 2019-09-02 2019-09-03 2019-09-04 2019-09-05 2019-09-06 
+names(res) : custers, wagenhoff, meurisse, budswelling, leafunfolding, ppa_biocide, mortality, stages 
+nlyr(stages) : 243 | premier/dernier jour : 2020-02-01 -> 2020-09-30 
+codes stages : 0 1 2 3 4 5 6 7 8 
+
+==== B. SAFRAN journalier via la brique partagee ==== 
+Collection https://api.geosas.fr/edr/collections/safran-isba : HTTP 200 
+Variables trouvees : T_Q, TINF_H_Q, TSUP_H_Q, SSI_Q (14 variables dans la collection) 
+  T_Q : Température (moyenne quotidienne) | unite=degrée Celcius https://fr.wikipedia.org/wiki/Degr%C3%A9_Celsius °C | propriete=Température de l'air 
+  TINF_H_Q : Température minimale des 24 températures horaires | unite=degrée Celcius https://fr.wikipedia.org/wiki/Degr%C3%A9_Celsius °C | propriete=Température de l'air 
+  TSUP_H_Q : Température maximale des 24 températures horaires | unite=degrée Celcius https://fr.wikipedia.org/wiki/Degr%C3%A9_Celsius °C | propriete=Température de l'air 
+  SSI_Q : Rayonnement visible (cumul quotidien) | unite=Joule par centimètre² https://fr.wikipedia.org/wiki/Millim%C3%A8tre J/cm² | propriete=Rayonnement 
+
+==== Zone alsace_vosges ==== 
+  requete 2023-09-01 -> 2023-12-31 : ok (HTTP 200) 
+  en-tete CSV : T_Q,TINF_H_Q,TSUP_H_Q,SSI_Q,x,y,time 
+  requete 2024-01-01 -> 2024-12-31 : ok (HTTP 200) 
+  en-tete CSV : T_Q,TINF_H_Q,TSUP_H_Q,SSI_Q,x,y,time 
+  requete 2025-01-01 -> 2025-09-30 : ok (HTTP 200) 
+  en-tete CSV : T_Q,TINF_H_Q,TSUP_H_Q,SSI_Q,x,y,time 
+  lignes : 48704 | jours : 761 | mailles : 64 | 2023-09-01 -> 2025-09-30 
+  jours attendus : 761 | manquants : 0 
+  T_Q     (tmean) : -7.6 a 30.2 | NA 0 
+  TINF_H_Q (tmin) : -10.3 a 25.6 | NA 0 
+  TSUP_H_Q (tmax) : -7.1 a 36.6 | NA 0 
+  part des lignes ou tmin <= tmean <= tmax est violee : 0.296 % 
+  rasters : 761 jours, 64 mailles avec donnees 
+
+==== alsace_vosges / cas 2024 ==== 
+  temps : 40.9 s | sorties : custers, wagenhoff, meurisse, budswelling, leafunfolding, ppa_biocide, mortality, stages 
+  stages : 243 jours, 2024-02-01 -> 2024-09-30 
+  mailles avec donnees : 64 | mailles avec NA dans stages : 0 | hors donnees non-NA : 0 
+  mailles ou un stade recule dans le temps : 0 
+  mailles ou l'ordre des dates de stades est incoherent : 0 
+  mailles sans stade 8 (adulte) a la fin de la serie : 16 
+  dates MEDIANES sur la zone : 
+    debourrement (budswelling) 2024-03-30 | feuilles (leafunfolding) 2024-04-09 
+    eclosion custers 2024-04-06 | wagenhoff 2024-04-05 | meurisse 2024-03-24 
+    stades 1..8 : 1=2024-03-24 | 2=2024-04-27 | 3=2024-05-10 | 4=2024-05-20 | 5=2024-06-04 | 6=2024-06-19 | 7=2024-07-11 | 8=2024-08-07 
+    mortalite L1 (%) : min 0 | mediane 0 | max 5 
+    nb de mailles par mortalite >= 50 % : 0 
+
+==== alsace_vosges / cas 2025 ==== 
+  temps : 37.8 s | sorties : custers, wagenhoff, meurisse, budswelling, leafunfolding, ppa_biocide, mortality, stages 
+  stages : 242 jours, 2025-02-01 -> 2025-09-30 
+  mailles avec donnees : 64 | mailles avec NA dans stages : 0 | hors donnees non-NA : 0 
+  mailles ou un stade recule dans le temps : 0 
+  mailles ou l'ordre des dates de stades est incoherent : 0 
+  mailles sans stade 8 (adulte) a la fin de la serie : 13 
+  dates MEDIANES sur la zone : 
+    debourrement (budswelling) 2025-04-08 | feuilles (leafunfolding) 2025-04-21 
+    eclosion custers 2025-04-12 | wagenhoff 2025-04-14 | meurisse 2025-04-04 
+    stades 1..8 : 1=2025-04-04 | 2=2025-05-01 | 3=2025-05-11 | 4=2025-05-21 | 5=2025-06-01 | 6=2025-06-12 | 7=2025-06-28 | 8=2025-08-05 
+    mortalite L1 (%) : min 0 | mediane 0 | max 0 
+    nb de mailles par mortalite >= 50 % : 0 
+
+==== alsace_vosges / cas 2025_tronque_15juin ==== 
+  temps : 13.3 s | sorties : custers, wagenhoff, meurisse, budswelling, leafunfolding, ppa_biocide, mortality, stages 
+  stages : 135 jours, 2025-02-01 -> 2025-06-15 
+  mailles avec donnees : 64 | mailles avec NA dans stages : 0 | hors donnees non-NA : 0 
+  mailles ou un stade recule dans le temps : 0 
+  mailles ou l'ordre des dates de stades est incoherent : 0 
+  mailles sans stade 8 (adulte) a la fin de la serie : 64 
+  dates MEDIANES sur la zone : 
+    debourrement (budswelling) 2025-04-08 | feuilles (leafunfolding) 2025-04-21 
+    eclosion custers 2025-04-12 | wagenhoff 2025-04-14 | meurisse 2025-04-04 
+    stades 1..8 : 1=2025-04-04 | 2=2025-05-01 | 3=2025-05-11 | 4=2025-05-19 | 5=2025-05-30 | 6=2025-06-10 | 7=NA | 8=NA 
+    mortalite L1 (%) : min 0 | mediane 0 | max 0 
+    nb de mailles par mortalite >= 50 % : 0 
+
+==== alsace_vosges / cas 2025_sans_sept_N-1 ==== 
+  AVERTISSEMENT : 122 missing days in time sequence. 
+  ERREUR apres avertissement : cf_start not in time attribute/vector! 
+
+==== Zone toulouse ==== 
+  requete 2023-09-01 -> 2023-12-31 : ok (HTTP 200) 
+  en-tete CSV : T_Q,TINF_H_Q,TSUP_H_Q,SSI_Q,x,y,time 
+  requete 2024-01-01 -> 2024-12-31 : ok (HTTP 200) 
+  en-tete CSV : T_Q,TINF_H_Q,TSUP_H_Q,SSI_Q,x,y,time 
+  requete 2025-01-01 -> 2025-09-30 : ok (HTTP 200) 
+  en-tete CSV : T_Q,TINF_H_Q,TSUP_H_Q,SSI_Q,x,y,time 
+  lignes : 48704 | jours : 761 | mailles : 64 | 2023-09-01 -> 2025-09-30 
+  jours attendus : 761 | manquants : 0 
+  T_Q     (tmean) : -3.1 a 31.7 | NA 0 
+  TINF_H_Q (tmin) : -6.6 a 25.5 | NA 0 
+  TSUP_H_Q (tmax) : -1.9 a 40.6 | NA 0 
+  part des lignes ou tmin <= tmean <= tmax est violee : 0.275 % 
+  rasters : 761 jours, 64 mailles avec donnees 
+
+==== toulouse / cas 2024 ==== 
+  temps : 39.2 s | sorties : custers, wagenhoff, meurisse, budswelling, leafunfolding, ppa_biocide, mortality, stages 
+  stages : 243 jours, 2024-02-01 -> 2024-09-30 
+  mailles avec donnees : 64 | mailles avec NA dans stages : 0 | hors donnees non-NA : 0 
+  mailles ou un stade recule dans le temps : 0 
+  mailles ou l'ordre des dates de stades est incoherent : 0 
+  mailles sans stade 8 (adulte) a la fin de la serie : 0 
+  dates MEDIANES sur la zone : 
+    debourrement (budswelling) 2024-03-31 | feuilles (leafunfolding) 2024-04-14 
+    eclosion custers 2024-03-22 | wagenhoff 2024-03-18 | meurisse 2024-03-08 
+    stades 1..8 : 1=2024-03-08 | 2=2024-04-14 | 3=2024-05-04 | 4=2024-05-14 | 5=2024-05-28 | 6=2024-06-08 | 7=2024-06-30 | 8=2024-08-01 
+    mortalite L1 (%) : min 10 | mediane 75 | max 100 
+    nb de mailles par mortalite >= 50 % : 56 
+
+==== toulouse / cas 2025 ==== 
+  temps : 38.3 s | sorties : custers, wagenhoff, meurisse, budswelling, leafunfolding, ppa_biocide, mortality, stages 
+  stages : 242 jours, 2025-02-01 -> 2025-09-30 
+  mailles avec donnees : 64 | mailles avec NA dans stages : 0 | hors donnees non-NA : 0 
+  mailles ou un stade recule dans le temps : 0 
+  mailles ou l'ordre des dates de stades est incoherent : 0 
+  mailles sans stade 8 (adulte) a la fin de la serie : 0 
+  dates MEDIANES sur la zone : 
+    debourrement (budswelling) 2025-04-01 | feuilles (leafunfolding) 2025-04-13 
+    eclosion custers 2025-03-25 | wagenhoff 2025-03-24 | meurisse 2025-03-07 
+    stades 1..8 : 1=2025-03-07 | 2=2025-04-14 | 3=2025-04-29 | 4=2025-05-09 | 5=2025-05-20 | 6=2025-06-01 | 7=2025-06-20 | 8=2025-07-19 
+    mortalite L1 (%) : min 25 | mediane 75 | max 75 
+    nb de mailles par mortalite >= 50 % : 59 
+
+==== toulouse / cas 2025_tronque_15juin ==== 
+  temps : 13.4 s | sorties : custers, wagenhoff, meurisse, budswelling, leafunfolding, ppa_biocide, mortality, stages 
+  stages : 135 jours, 2025-02-01 -> 2025-06-15 
+  mailles avec donnees : 64 | mailles avec NA dans stages : 0 | hors donnees non-NA : 0 
+  mailles ou un stade recule dans le temps : 0 
+  mailles ou l'ordre des dates de stades est incoherent : 0 
+  mailles sans stade 8 (adulte) a la fin de la serie : 64 
+  dates MEDIANES sur la zone : 
+    debourrement (budswelling) 2025-04-01 | feuilles (leafunfolding) 2025-04-13 
+    eclosion custers 2025-03-25 | wagenhoff 2025-03-24 | meurisse 2025-03-07 
+    stades 1..8 : 1=2025-03-07 | 2=2025-04-14 | 3=2025-04-29 | 4=2025-05-09 | 5=2025-05-20 | 6=2025-06-01 | 7=NA | 8=NA 
+    mortalite L1 (%) : min 25 | mediane 75 | max 75 
+    nb de mailles par mortalite >= 50 % : 59 
+
+==== toulouse / cas 2025_sans_sept_N-1 ==== 
+  AVERTISSEMENT : 122 missing days in time sequence. 
+  ERREUR apres avertissement : cf_start not in time attribute/vector! 
+
+CSV : 384 lignes -> phenthau_diag_cellules.csv 
+
+==== Fin du diagnostic PHENTHAU ==== 

@@ -1,0 +1,107 @@
+{
+  "collection": "safran-isba",
+  "titre": "Safran-Isba, Données changement climatique - SIM quotidienne",
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          60000,
+          1617000,
+          1196000,
+          2681000
+        ]
+      ],
+      "crs": "IGNF:LAMBE"
+    },
+    "temporal": {
+      "interval": [
+        [
+          "1958-08-01T00:00:00Z",
+          "2026-10-27T00:00:00Z"
+        ]
+      ],
+      "trs": "TIMECRS[\"DateTime\",TDATUM[\"Gregorian Calendar\"],CS[TemporalDateTime,1],AXIS[\"Time (T)\",future]]",
+      "values": [
+        "1958-08-01T00:00:00Z/2026-10-27T00:00:00Z"
+      ]
+    }
+  },
+  "parameter_names": {
+    "T_Q": {
+      "description": "Température (moyenne quotidienne)",
+      "measurementType": {
+        "duration": "PT24H",
+        "method": "moyenne"
+      },
+      "observedProperty": {
+        "id": "http://opendata.inrae.fr/thesaurusINRAE/c_1243",
+        "label": "Température de l'air"
+      },
+      "type": "Parameter",
+      "unit": {
+        "label": "degrée Celcius",
+        "symbol": {
+          "type": "https://fr.wikipedia.org/wiki/Degr%C3%A9_Celsius",
+          "value": "°C"
+        }
+      }
+    },
+    "TINF_H_Q": {
+      "description": "Température minimale des 24 températures horaires",
+      "measurementType": {
+        "duration": "PT24H",
+        "method": "minimale"
+      },
+      "observedProperty": {
+        "id": "http://opendata.inrae.fr/thesaurusINRAE/c_1243",
+        "label": "Température de l'air"
+      },
+      "type": "Parameter",
+      "unit": {
+        "label": "degrée Celcius",
+        "symbol": {
+          "type": "https://fr.wikipedia.org/wiki/Degr%C3%A9_Celsius",
+          "value": "°C"
+        }
+      }
+    },
+    "TSUP_H_Q": {
+      "description": "Température maximale des 24 températures horaires",
+      "measurementType": {
+        "duration": "PT24H",
+        "method": "maximum"
+      },
+      "observedProperty": {
+        "id": "http://opendata.inrae.fr/thesaurusINRAE/c_1243",
+        "label": "Température de l'air"
+      },
+      "type": "Parameter",
+      "unit": {
+        "label": "degrée Celcius",
+        "symbol": {
+          "type": "https://fr.wikipedia.org/wiki/Degr%C3%A9_Celsius",
+          "value": "°C"
+        }
+      }
+    },
+    "SSI_Q": {
+      "description": "Rayonnement visible (cumul quotidien)",
+      "measurementType": {
+        "duration": "PT24H",
+        "method": "sum"
+      },
+      "observedProperty": {
+        "id": "http://opendata.inrae.fr/thesaurusINRAE/c_14024",
+        "label": "Rayonnement"
+      },
+      "type": "Parameter",
+      "unit": {
+        "label": "Joule par centimètre²",
+        "symbol": {
+          "type": "https://fr.wikipedia.org/wiki/Millim%C3%A8tre",
+          "value": "J/cm²"
+        }
+      }
+    }
+  }
+}
