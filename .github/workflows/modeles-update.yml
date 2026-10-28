@@ -17,6 +17,10 @@ on:
         description: "Construit les masques epicea / pin (BD Foret IGN) dans data/masques/, sans modeles"
         type: boolean
         default: false
+      diagnostic_phenthau:
+        description: "Diagnostic seul : teste PHENTHAUproc (chene) sur 2 petites zones SAFRAN, ecrit data/diag/, sans modeles"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # commit + push des GeoJSON
@@ -112,8 +116,17 @@ jobs:
         if: ${{ inputs.construire_masques }}
         run: Rscript R/construire_masques.R
 
+      # PHENTHAUproc (CRAN, R >= 4.1) : installe uniquement pour le diagnostic, hors packages des 4 modeles
+      - name: Installer PHENTHAUproc (diagnostic chene uniquement)
+        if: ${{ inputs.diagnostic_phenthau }}
+        run: Rscript -e 'install.packages("PHENTHAUproc"); stopifnot(requireNamespace("PHENTHAUproc", quietly = TRUE))'
+
+      - name: Diagnostic PHENTHAUproc (mode diagnostic uniquement)
+        if: ${{ inputs.diagnostic_phenthau }}
+        run: Rscript R/diag_phenthau.R
+
       - name: Publier diagnostic / masques (data/diag, data/masques)
-        if: ${{ inputs.diagnostic_bdforet || inputs.construire_masques }}
+        if: ${{ inputs.diagnostic_bdforet || inputs.construire_masques || inputs.diagnostic_phenthau }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -130,30 +143,30 @@ jobs:
           exit 1
 
       - name: 1. Recuperation SAFRAN partagee (une seule fois pour les 4 modeles)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
         run: Rscript R/fetch_safran.R
 
       - name: 2. PHENIPS (Ips typographus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
         run: Rscript R/pipeline_phenips.R
 
       - name: 3. CHAPY (Pityogenes chalcographus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
         run: Rscript R/pipeline_chapy.R
 
       - name: 4. STENO (Ips sexdentatus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
         run: Rscript R/pipeline_steno.R
 
       - name: 5. Monochamus galloprovincialis (bivoltisme A + B)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
         run: Rscript R/pipeline_monochamus.R
 
       # [P15] -A : prend aussi en compte les fichiers SUPPRIMES (purge des anciens
       # fichiers dates). Retry : si un autre commit est arrive entre-temps,
       # on se rebase dessus puis on repousse.
       - name: 6. Publier les GeoJSON (commit unique)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -173,7 +186,7 @@ jobs:
 
       # [P15] Notification d'echec : un ticket ouvert (ou commente s'il existe deja)
       - name: Signaler l'echec par un ticket GitHub
-        if: ${{ failure() && !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ failure() && !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
