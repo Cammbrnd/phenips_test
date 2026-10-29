@@ -96,6 +96,31 @@ MODELES <- list(
       list(nom = "Essaimage",   fichier = "steno_essaimage_{variante}_latest.geojson",   champ_label = "libelle")
     )
   ),
+  phenthau = list(
+    label = "PHENTHAU (Thaumetopoea processionea, chene)",
+    meta  = "phenthau_meta.json",
+    aide  = paste("Stade atteint a la date des donnees ; L3 = debut du risque urticant (poils urticants).",
+                  "Date d'eclosion = la plus precoce des 3 modeles (Custers, Wagenhoff, Meurisse).",
+                  "Mortalite des L1 = famine entre l'eclosion et le debourrement du chene : elle n'est",
+                  "determinee qu'une fois le debourrement atteint."),
+    avertissement = paste("ATTENTION : modele PHENTHAUproc (Halbig et al. 2024) calibre sur Quercus robur en",
+                          "Allemagne jusqu'a 800 m d'altitude. Hors de ce domaine (sud de la France, montagne),",
+                          "les resultats sont une extrapolation, notamment la mortalite des L1 (eclosion tres",
+                          "precoce par rapport au debourrement). Seules les mailles de 8 km qui croisent au",
+                          "moins un peuplement de chenes decidus (BD Foret IGN) sont affichees."),
+    couches = list(
+      list(nom = "Stade (processionnaire du chene)", fichier = "phenthau_stades_latest.geojson",
+           champ_label = "label"),
+      list(nom = "Debut du risque urticant (L3)", fichier = "phenthau_l3_latest.geojson",
+           champ_label = "date_l3"),
+      list(nom = "Eclosion des L1", fichier = "phenthau_eclosion_latest.geojson",
+           champ_label = "date_eclosion"),
+      list(nom = "Debourrement du chene", fichier = "phenthau_debourrement_latest.geojson",
+           champ_label = "date_debourrement"),
+      list(nom = "Mortalite des L1 (famine)", fichier = "phenthau_mortalite_latest.geojson",
+           champ_label = "label")
+    )
+  ),
   monochamus = list(
     label = "Monochamus galloprovincialis (bivolt. A + B)",
     couches = list(
@@ -353,7 +378,7 @@ server <- function(input, output, session) {
 
   output$ui_variante <- renderUI({
     m <- MODELES[[input$modele]]
-    if (length(m$variantes) == 0) return(NULL)
+    if (length(m$variantes) == 0) return(if (is.null(m$aide)) NULL else helpText(m$aide))   # PHENTHAU : aide sans scenario
     tagList(
       radioButtons("variante", "Scenario d'exposition",
                    choices = m$variantes, selected = unname(m$variantes[1])),

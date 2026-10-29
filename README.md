@@ -199,6 +199,7 @@ l'essence-hôte** :
 |---|---|---|
 | PHENIPS-Clim, CHAPY | sapin / épicéa | `data/masques/masque_epicea.csv` |
 | STENO-DJ | tous les pins | `data/masques/masque_pin.csv` |
+| PHENTHAU | chênes décidus (« Chênes décidus », hors sempervirents) | `data/masques/masque_chene.csv` |
 
 - Source : **IGN, BD Forêt® V2** (WFS Géoplateforme, couche
   `LANDCOVER.FORESTINVENTORY.V2:formation_vegetale`, champ `essence`). Épicéa = classe
@@ -269,3 +270,33 @@ Carte d'une année (curseur animable), moyenne sur une période, ou tendance par
 (régression linéaire maille par maille, grisage des tendances non significatives à p > 0,05) ;
 clic sur une maille pour afficher sa série temporelle face à la moyenne de toutes les mailles.
 L'app ne fait que lire les tables du dépôt (aucun calcul lourd).
+
+## PHENTHAU : processionnaire du chêne (*Thaumetopoea processionea*)
+
+5e modèle, package CRAN **PHENTHAUproc** (Halbig et al. 2024, *Forest Ecol. Manag.* 552:121525),
+mode régional `dailymeanminmax` : températures **journalières** SAFRAN (`T_Q`, `TINF_H_Q`,
+`TSUP_H_Q`), sans reconstruction horaire.
+
+- **Calcul** : `R/pipeline_phenthau.R` (fonctions dans `R/phenthau_functions.R`), à la suite des
+  4 autres modèles dans `modeles-update.yml` (étapes 7 à 9, `continue-on-error` : un échec
+  PHENTHAU ne bloque pas les 4 modèles, déjà publiés, et ouvre le ticket d'échec).
+- **Données amont** : le package compte les jours de froid depuis le **1er septembre N-1**.
+  `R/fetch_safran_amont.R` récupère septembre-décembre N-1 (même contrôle qualité que le fetch
+  partagé, cache `safran_v2_*_<N-1>.csv`, sortie `data/cache_meteo/meteo_amont.rds`) ; le fetch
+  partagé (1er janvier N) n'est pas modifié.
+- **Sorties** (`data/`) : `phenthau_{stades,l3,eclosion,debourrement,mortalite}_<date>.geojson`
+  (+ `_latest`), `phenthau_meta.json`. GeoTIFF L93 (17 bandes de jour de l'année par maille) et PNG
+  nationaux : artefact `phenthau-rasters` du run (30 jours), non commités. Champs GeoJSON :
+  `espece`, `modele = "PHENTHAU"`, `couleur`, `label`, `date_iso`, `avertissement`.
+- **Éclosion** : `DEF_ECLOSION = "first"` (la plus précoce des 3 modèles : Custers, Wagenhoff,
+  Meurisse). L'option `mean` du package n'a pas d'effet utile (testée sur 2 zones × 3 ans :
+  mêmes dates de stades).
+- **Mortalité des L1** : publiée seulement une fois le débourrement atteint (avant, le package
+  renvoie 0).
+- **Limite d'applicabilité** : calibré sur *Quercus robur* en Allemagne, jusqu'à 800 m. Hors de ce
+  domaine (sud de la France, montagne), c'est une extrapolation : au sud-ouest, l'éclosion
+  (Meurisse) précède de 3 à 4 semaines le débourrement et la mortalité L1 dépasse 50 % sur presque
+  toutes les mailles. À lire comme un indicateur, pas comme une prévision validée.
+- **Tests** (entrées *Run workflow*) : `diagnostic_phenthau`, `test_phenthau` (2 petites emprises,
+  2023-2025, `def_eclosion` first/mean), `test_amont` (fetch amont national, bilan dans
+  `data/diag/`), `masques=chene` avec `construire_masques`.

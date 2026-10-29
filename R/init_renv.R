@@ -16,7 +16,7 @@ if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv")
 renv::init(bare = TRUE, restart = FALSE)
 
 pkgs <- c("barrks", "terra", "httr2", "ggplot2", "tidyterra", "lubridate",
-          "glue", "sf", "scales", "data.table", "dplyr", "jsonlite")
+          "glue", "sf", "scales", "data.table", "dplyr", "jsonlite", "PHENTHAUproc")
 renv::install(pkgs)
 
 # type = "all" : inscrit aussi les packages appeles uniquement via library()
