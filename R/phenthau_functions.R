@@ -52,6 +52,24 @@ TABLE_STADES <- data.frame(
 )
 STADE_L3 <- 3L
 
+# Fourchette de mortalite des L1 : le package ne donne qu'UNE mortalite (celle de l'eclosion la
+# plus precoce des 3 modeles, def_hatch = "first"). On la recalcule avec chaque modele d'eclosion
+# (PHENTHAUproc::mortality(par_hatch = <un modele>)) : fourchette = min - max des 3 valeurs.
+# Plus l'eclosion est precoce, plus l'ecart au debourrement est long, donc plus la mortalite est forte :
+# la mortalite "first" (couche mortalite, classes) est la borne haute de la fourchette.
+MODELES_ECLOSION <- c("custers", "wagenhoff", "meurisse")
+PAR_DEBOURREMENT <- "quercus_robur_clone256_type1"   # parametrisation du debourrement (defaut du package)
+
+# Sources de la fourchette (reprises dans README, GeoJSON de mortalite et meta)
+SOURCES_MORTALITE <- paste0(
+  "Mortalite L1 par famine (ecart eclosion - debourrement du chene, somme de temperatures) : ",
+  "Halbig et al. 2024, Forest Ecol. Manag. 552:121525 (doi:10.1016/j.foreco.2023.121525). ",
+  "Fourchette = min-max des 3 modeles d'eclosion : Custers 2003 (Climate change and trophic ",
+  "synchronisation, Wageningen UR) ; Wagenhoff et al. 2014 (Eur. J. Entomol. 111:207-215, ",
+  "doi:10.14411/eje.2014.030) ; Meurisse et al. 2012 (Agric. Forest Entomol. 14:239-250, ",
+  "doi:10.1111/j.1461-9563.2011.00562.x). Debourrement : Quercus robur, parametrisation ",
+  PAR_DEBOURREMENT, ".")
+
 # Mortalite des L1 (famine entre eclosion et debourrement, %), 5 classes + "a determiner"
 CLASSES_MORTALITE <- data.frame(
   ordre   = 0:5,
@@ -106,7 +124,27 @@ modeliser_phenthau <- function(serie, annee = ANNEE, def_hatch = DEF_ECLOSION) {
              params = parameter("dailymeanminmax", year = annee), def_hatch = def_hatch)
   )
   dates <- as.Date(terra::time(res$stages))
-  list(res = res, dates = dates, annee = annee, date_ref = max(dates))
+
+  # Mortalite L1 avec chaque modele d'eclosion (fourchette). Jamais bloquant : en cas d'echec ou
+  # d'incoherence, la couche mortalite reste publiee avec la seule valeur du package.
+  # PHENTHAUproc::mortality(par_hatch = <un seul modele>) echoue pour custers et wagenhoff (les
+  # vecteurs temps de l'eclosion et du debourrement different) : on appelle donc la fonction
+  # interne du package, avec les memes entrees que phenthau() (debourrement et eclosion de `res`).
+  mort_modeles <- tryCatch({
+    calc_mort <- utils::getFromNamespace("calc_mortality", "PHENTHAUproc")
+    mm <- lapply(stats::setNames(MODELES_ECLOSION, MODELES_ECLOSION), function(p)
+      as.numeric(terra::values(calc_mort(serie[c("tmean", "tmin", "tmax")], res$budswelling, res[[p]]))[, 1]))
+    if (def_hatch == "first") {
+      # controle : l'eclosion la plus precoce donne la mortalite la plus forte, donc la mortalite
+      # du package ("first") doit etre egale au maximum des 3 modeles
+      ref <- as.numeric(terra::values(res$mortality)[, 1])
+      mx  <- do.call(pmax, c(unname(mm), na.rm = TRUE))
+      if (!isTRUE(all(mx == ref | (is.na(mx) & is.na(ref)))))
+        stop("max des 3 modeles different de la mortalite du package (", sum(mx != ref, na.rm = TRUE), " mailles)")
+    }
+    mm
+  }, error = function(e) { message("::warning::PHENTHAU fourchette de mortalite ignoree : ", conditionMessage(e)); NULL })
+  list(res = res, dates = dates, annee = annee, date_ref = max(dates), mort_modeles = mort_modeles)
 }
 
 #' DOY (jour de l'annee) du premier jour ou `cond` est vraie, par maille (matrice mailles x jours)
@@ -139,6 +177,15 @@ calculer_rasters_phenthau <- function(pheno) {
   mort <- as.numeric(terra::values(res$mortality)[, 1])
   mort[is.na(v$doy_debourrement)] <- NA_real_
   v$mortalite_pct <- mort
+
+  # Fourchette : meme regle (indeterminee avant le debourrement, commun aux 3 modeles)
+  if (!is.null(pheno$mort_modeles)) {
+    M <- do.call(cbind, pheno$mort_modeles)
+    M[is.na(v$doy_debourrement), ] <- NA_real_
+    for (p in MODELES_ECLOSION) v[[paste0("mortalite_", p, "_pct")]] <- M[, p]
+    v$mortalite_min_pct <- do.call(pmin, c(unname(as.data.frame(M)), na.rm = FALSE))
+    v$mortalite_max_pct <- do.call(pmax, c(unname(as.data.frame(M)), na.rm = FALSE))
+  }
   v$stade_courant <- as.integer(S[, ncol(S)])
   v$risque_urticant <- as.integer(v$stade_courant >= STADE_L3)
   v
@@ -237,12 +284,45 @@ produire_geojson_mortalite <- function(pheno, ras, dir_out = DIR_OUT) {
   classe[presentes] <- 0L                                 # a determiner
   det <- presentes & !is.na(m)
   classe[det] <- findInterval(m[det], CLASSES_MORTALITE$borne[-1])   # 1..5 = ordre des classes
-  v <- vectoriser_phenthau(classe, "ordre")
+
+  # Les mortalites du package sont des valeurs discretes (0, 5, 10, 25, 50, 75, 100 %) : on dissout
+  # par (classe, mortalite de chaque modele d'eclosion), ce qui garde la fourchette exacte par
+  # polygone sans multiplier les polygones.
+  a_fourchette <- !is.null(ras$mortalite_min_pct)
+  if (a_fourchette) {
+    modeles <- sapply(MODELES_ECLOSION, function(p) ras[[paste0("mortalite_", p, "_pct")]])
+    cle_txt <- apply(cbind(classe, modeles), 1, paste, collapse = "|")
+    cle_txt[is.na(classe)] <- NA_character_
+    cle <- as.integer(factor(cle_txt))
+    tab <- unique(data.frame(cle = cle, ordre = classe, modeles, mn = ras$mortalite_min_pct,
+                             mx = ras$mortalite_max_pct)[!is.na(cle), ])
+  } else {
+    cle <- classe
+  }
+  v <- vectoriser_phenthau(cle, "cle")
   if (is.null(v)) { cat("  Aucun polygone produit.\n\n"); return(invisible(NULL)) }
+  if (a_fourchette) {
+    k <- match(v$cle, tab$cle)
+    v$ordre <- as.integer(tab$ordre[k])
+    for (p in MODELES_ECLOSION) v[[paste0("mort_", p, "_pct")]] <- tab[[p]][k]
+    v$mort_min_pct <- tab$mn[k]
+    v$mort_max_pct <- tab$mx[k]
+    v$fourchette <- ifelse(is.na(v$mort_min_pct), "a determiner",
+                           ifelse(v$mort_min_pct == v$mort_max_pct, sprintf("%g %%", v$mort_max_pct),
+                                  sprintf("%g - %g %%", v$mort_min_pct, v$mort_max_pct)))
+    v$cle <- NULL
+  } else {
+    names(v)[names(v) == "cle"] <- "ordre"
+  }
   v$ordre   <- as.integer(v$ordre)
   i <- match(v$ordre, CLASSES_MORTALITE$ordre)
   v$label   <- CLASSES_MORTALITE$label[i]
   v$couleur <- CLASSES_MORTALITE$couleur[i]
+  if (a_fourchette) {
+    v$survol <- ifelse(v$ordre == 0L, v$label,
+                       paste0(v$label, " (fourchette 3 modeles d'eclosion : ", v$fourchette, ")"))
+    v$source_mortalite <- SOURCES_MORTALITE
+  }
   v <- v[order(v$ordre), ]
   v <- ajouter_meta_phenthau(v, pheno$date_ref, pheno$annee)
   invisible(ecrire_geojson_phenthau(v, nom_fichier_phenthau("mortalite", pheno$date_ref), dir_out))
@@ -374,7 +454,8 @@ ecrire_meta_phenthau <- function(pheno, n_mailles, dir_out = DIR_OUT) {
     sprintf('"def_eclosion": %s',    json_str(DEF_ECLOSION)),
     sprintf('"mailles": %d',         as.integer(n_mailles)),
     sprintf('"avertissement": %s',   json_str(AVERTISSEMENT_PHENTHAU)),
-    sprintf('"source": %s',          json_str(SOURCE_PHENTHAU))
+    sprintf('"source": %s',          json_str(SOURCE_PHENTHAU)),
+    sprintf('"source_mortalite": %s', json_str(SOURCES_MORTALITE))
   )
   chemin <- file.path(dir_out, "phenthau_meta.json")
   writeLines(c("{", paste0("  ", champs, collapse = ",\n"), "}"), chemin)
@@ -398,5 +479,13 @@ synthese_phenthau <- function(pheno, ras) {
   cat(glue("  Dates medianes : debourrement {med(ras$doy_debourrement)} | eclosion {med(ras$doy_eclosion)} | ",
            "L3 {med(ras$doy_stade_3)} | pupe {med(ras$doy_stade_7)} | adulte {med(ras$doy_stade_8)}\n"))
   cat(glue("  Mortalite L1 : {sum(!is.na(ras$mortalite_pct))} mailles determinees, ",
-           "{sum(ras$mortalite_pct >= 50, na.rm = TRUE)} avec >= 50 %\n\n"))
+           "{sum(ras$mortalite_pct >= 50, na.rm = TRUE)} avec >= 50 %\n"))
+  if (!is.null(ras$mortalite_min_pct)) {
+    # controle de coherence : la mortalite du package ("first") doit etre la borne haute de la fourchette
+    ecart <- sum(abs(ras$mortalite_pct - ras$mortalite_max_pct) > 1e-9, na.rm = TRUE)
+    larg  <- ras$mortalite_max_pct - ras$mortalite_min_pct
+    cat(glue("  Fourchette de mortalite (3 modeles) : largeur mediane {stats::median(larg, na.rm = TRUE)} points, ",
+             "max {max(larg, na.rm = TRUE)} ; mailles ou mortalite 'first' != borne haute : {ecart}\n"))
+  }
+  cat("\n")
 }
