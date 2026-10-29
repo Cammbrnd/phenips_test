@@ -10,6 +10,10 @@
 #                       (sylvestre, maritime, laricio/noir, d'Alep, a crochets/cembro,
 #                       pins melanges, autre pin)  -> utilise par STENO (Ips sexdentatus)
 #
+#   masque_chene.csv  : mailles qui croisent au moins un peuplement de "Chenes decidus"
+#                       (Quercus robur / petraea / pubescens ; les chenes sempervirents sont
+#                       exclus) -> utilise par PHENTHAU (Thaumetopoea processionea)
+#
 # Colonnes : x, y (centre de maille, L93), part (part de la surface de la maille
 # couverte par l'essence, 0-1). Le masque = toutes les lignes du fichier.
 #
@@ -36,10 +40,20 @@ dir.create(DIR_MASQUES, showWarnings = FALSE, recursive = TRUE)
 #   "Sapin, epicea"                                    -> 'Sapin,%'
 #   "Pin sylvestre", "Pin maritime", "Pin laricio, pin noir", "Pin d'Alep",
 #   "Pin a crochets, pin cembro", "Pins melanges", "Pin autre" -> 'Pin%'
+#   "Chenes decidus" (accents ^ et ') -> 'Ch%nes d%cidus' (exclut "Chenes sempervirents")
 ESSENCES <- list(
   epicea = "essence LIKE 'Sapin,%'",
-  pin    = "essence LIKE 'Pin%'"
+  pin    = "essence LIKE 'Pin%'",
+  chene  = "essence LIKE 'Ch%nes d%cidus'"
 )
+
+# Variable d'environnement MASQUES (ex. "chene") : ne construit que ces masques.
+# Vide = tous. Les autres CSV et leur entree dans masques_meta.json sont conserves.
+NOMS_A_CONSTRUIRE <- trimws(strsplit(Sys.getenv("MASQUES", ""), ",")[[1]])
+NOMS_A_CONSTRUIRE <- NOMS_A_CONSTRUIRE[nzchar(NOMS_A_CONSTRUIRE)]
+if (length(NOMS_A_CONSTRUIRE) == 0) NOMS_A_CONSTRUIRE <- names(ESSENCES)
+if (!all(NOMS_A_CONSTRUIRE %in% names(ESSENCES)))
+  stop("MASQUES inconnu(s) : ", paste(setdiff(NOMS_A_CONSTRUIRE, names(ESSENCES)), collapse = ", "), call. = FALSE)
 
 wfs_page <- function(cql, start, avec_propertyname = TRUE) {
   params <- list(SERVICE = "WFS", VERSION = "2.0.0", REQUEST = "GetFeature",
@@ -167,10 +181,19 @@ construire_masque <- function(nom) {
   cat(glue("  -> {fichier} : {nrow(d)} mailles (sur {ncell(RST_FRANCE)} cellules de la grille)\n"))
   cat(glue("     part de maille couverte : mediane {round(median(d$part), 3)} ; ",
            "mailles avec moins de 1% : {sum(d$part < 0.01)} ; plus de 10% : {sum(d$part >= 0.10)}\n"))
-  list(nom = nom, n_mailles = nrow(d), n_polygones = n_poly_tot, filtre = cql_essence)
+  list(nom = nom, n_mailles = nrow(d), n_polygones = n_poly_tot, filtre = cql_essence,
+       date = format(Sys.Date()))
 }
 
-res <- lapply(names(ESSENCES), construire_masque)
+res <- lapply(NOMS_A_CONSTRUIRE, construire_masque)
+
+# Construction partielle : on garde les entrees des masques non reconstruits
+f_meta <- file.path(DIR_MASQUES, "masques_meta.json")
+if (file.exists(f_meta) && !setequal(NOMS_A_CONSTRUIRE, names(ESSENCES))) {
+  anciens <- tryCatch(read_json(f_meta)$masques, error = function(e) list())
+  anciens <- Filter(function(m) !(m$nom %in% NOMS_A_CONSTRUIRE), anciens)
+  res <- c(anciens, res)
+}
 meta <- list(
   source = "IGN - BD Foret V2 (LANDCOVER.FORESTINVENTORY.V2:formation_vegetale), champ essence",
   grille = list(res_m = SAFRAN_RES, crs = CRS_L93, xmin = FRANCE_XMIN, ymin = FRANCE_YMIN),
@@ -185,8 +208,11 @@ ctl <- list(
   list("epicea", "Jura (922000, 6626000)",     922000, 6626000, TRUE),
   list("epicea", "Landes (388000, 6352000)",   388000, 6352000, FALSE),
   list("pin",    "Landes (388000, 6352000)",   388000, 6352000, TRUE),
-  list("pin",    "Auvergne (692000, 6500000)", 692000, 6500000, NA)
+  list("pin",    "Auvergne (692000, 6500000)", 692000, 6500000, NA),
+  list("chene",  "Troncais, Allier (674771, 6618932)", 674771, 6618932, TRUE),
+  list("chene",  "Massif du Mont-Blanc (999540, 6532918)", 999540, 6532918, FALSE)
 )
+ctl <- Filter(function(k) k[[1]] %in% NOMS_A_CONSTRUIRE, ctl)
 for (k in ctl) {
   d <- read.csv(file.path(DIR_MASQUES, glue("masque_{k[[1]]}.csv")))
   cel <- cellFromXY(RST_FRANCE, cbind(k[[3]], k[[4]]))

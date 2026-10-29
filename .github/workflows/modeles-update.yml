@@ -17,6 +17,10 @@ on:
         description: "Construit les masques epicea / pin (BD Foret IGN) dans data/masques/, sans modeles"
         type: boolean
         default: false
+      masques:
+        description: "Avec construire_masques : liste a reconstruire, separee par des virgules (epicea, pin, chene). Vide = tous"
+        type: string
+        default: ""
       diagnostic_phenthau:
         description: "Diagnostic seul : teste PHENTHAUproc (chene) sur 2 petites zones SAFRAN, ecrit data/diag/, sans modeles"
         type: boolean
@@ -114,6 +118,8 @@ jobs:
 
       - name: Construire les masques d'essence (mode masques uniquement)
         if: ${{ inputs.construire_masques }}
+        env:
+          MASQUES: ${{ inputs.masques }}
         run: Rscript R/construire_masques.R
 
       # PHENTHAUproc (CRAN, R >= 4.1) : installe uniquement pour le diagnostic, hors packages des 4 modeles

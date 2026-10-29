@@ -3,6 +3,7 @@
 # -----------------------------------------------------------------------------
 #   epicea -> PHENIPS (Ips typographus) et CHAPY (Pityogenes chalcographus)
 #   pin    -> STENO (Ips sexdentatus)
+#   chene  -> PHENTHAU (Thaumetopoea processionea ; "Chenes decidus")
 # Les fichiers data/masques/masque_<nom>.csv sont produits par R/construire_masques.R
 # (BD Foret V2, IGN). Une maille masquee passe a NA dans tous les rasters
 # meteo : le modele ne la calcule pas et elle n'apparait pas dans les GeoJSON.
