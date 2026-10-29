@@ -5,7 +5,8 @@
 #            data/cache_meteo/meteo_amont.rds      (R/fetch_safran_amont.R, sept-dec N-1)
 #            data/masques/masque_chene.csv         (BD Foret V2, "Chenes decidus")
 # Sorties  : phenthau_{stades,l3,eclosion,debourrement,mortalite}_<date>.geojson
-#            -> copie vers *_latest.geojson, phenthau_meta.json, phenthau_<annee>_L93.tif
+#            -> copie vers *_latest.geojson, phenthau_meta.json, phenthau_<annee>_L93.tif,
+#               cartes PNG phenthau_{stades,l3}_<date>.png
 # Fonctions: R/phenthau_functions.R
 #
 # MODE TEST (petite emprise, plusieurs annees), sans le fetch national ni l'amont :
@@ -99,9 +100,11 @@ for (a in annees) {
   )
   for (n in NOMS_COUCHES) publier_latest_phenthau(ch[[n]], glue("phenthau_{n}_latest.geojson"))
 
-  # GeoTIFF et synthese : jamais bloquants pour la publication
+  # GeoTIFF, PNG et synthese : jamais bloquants pour la publication
   tryCatch(exporter_geotiff_phenthau(pheno, ras),
            error = function(e) message("  [INFO] GeoTIFF ignore : ", conditionMessage(e)))
+  tryCatch(cartes_nationales_phenthau(pheno, ras),
+           error = function(e) message("  [INFO] PNG ignores : ", conditionMessage(e)))
   tryCatch(synthese_phenthau(pheno, ras),
            error = function(e) message("  [INFO] synthese ignoree : ", conditionMessage(e)))
 

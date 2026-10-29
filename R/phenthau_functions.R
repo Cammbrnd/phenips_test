@@ -265,6 +265,67 @@ exporter_geotiff_phenthau <- function(pheno, ras, dir_out = DIR_OUT) {
 
 
 # =============================================================================
+# 4b. CARTES NATIONALES PNG (stade a la date des donnees + date de debut du risque urticant L3)
+# =============================================================================
+# ggplot2 seul (deja installe par le workflow), grille L93 en tuiles : pas de fond de carte.
+
+cartes_nationales_phenthau <- function(pheno, ras, dir_out = DIR_OUT) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    cat("  ggplot2 absent : PNG ignores.\n\n"); return(invisible(NULL))
+  }
+  cat(">> [PHENTHAU] Cartes nationales PNG...\n")
+  date_j     <- format(pheno$date_ref, "%Y%m%d")
+  date_label <- format(pheno$date_ref, "%d/%m/%Y")
+  vers_df <- function(vec) {
+    r <- vers_raster(vec)
+    d <- as.data.frame(r, xy = TRUE, na.rm = TRUE)
+    names(d)[3] <- "v"
+    d
+  }
+  theme_carte <- ggplot2::theme_void(base_size = 11) +
+    ggplot2::theme(plot.title = ggplot2::element_text(face = "bold"),
+                   plot.caption = ggplot2::element_text(size = 8, colour = "grey40", hjust = 0),
+                   plot.caption.position = "plot")
+  legende_cadre <- paste(c(strwrap(AVERTISSEMENT_PHENTHAU, 90), strwrap(SOURCE_PHENTHAU, 90)), collapse = "\n")
+
+  # 1. Stade a la date des donnees
+  d1 <- vers_df(ras$stade_courant)
+  if (nrow(d1) > 0) {
+    d1$stade <- factor(TABLE_STADES$label[match(d1$v, TABLE_STADES$stade)], levels = TABLE_STADES$label)
+    p1 <- ggplot2::ggplot(d1, ggplot2::aes(x, y, fill = stade)) +
+      ggplot2::geom_tile() +
+      ggplot2::scale_fill_manual(values = stats::setNames(TABLE_STADES$couleur, TABLE_STADES$label),
+                                 drop = TRUE, name = "Stade") +
+      ggplot2::coord_equal() +
+      ggplot2::labs(title = glue("Processionnaire du chene - stade au {date_label}"),
+                    subtitle = "Mailles SAFRAN 8 km croisant des chenes decidus (BD Foret V2)",
+                    caption = legende_cadre) + theme_carte
+    f1 <- file.path(dir_out, glue("phenthau_stades_{date_j}.png"))
+    ggplot2::ggsave(f1, p1, width = 8, height = 8, dpi = 150, bg = "white")
+    cat(glue("  -> {basename(f1)}\n"))
+  }
+
+  # 2. Date de debut du risque urticant (L3)
+  d2 <- vers_df(ras$doy_stade_3)
+  if (nrow(d2) > 0) {
+    d2$date <- as.Date(sprintf("%d-01-01", pheno$annee)) + d2$v - 1L
+    p2 <- ggplot2::ggplot(d2, ggplot2::aes(x, y, fill = date)) +
+      ggplot2::geom_tile() +
+      ggplot2::scale_fill_gradientn(colours = c("#FFF3B0", "#FDE725", "#35B779", "#31688E", "#440154"),
+                                    trans = "date", name = "Date", labels = function(x) format(x, "%d/%m")) +
+      ggplot2::coord_equal() +
+      ggplot2::labs(title = glue("Processionnaire du chene - debut du risque urticant (L3) {pheno$annee}"),
+                    subtitle = glue("Donnees au {date_label}"), caption = legende_cadre) + theme_carte
+    f2 <- file.path(dir_out, glue("phenthau_l3_{date_j}.png"))
+    ggplot2::ggsave(f2, p2, width = 8, height = 8, dpi = 150, bg = "white")
+    cat(glue("  -> {basename(f2)}\n"))
+  }
+  cat("\n")
+  invisible(TRUE)
+}
+
+
+# =============================================================================
 # 5. PUBLICATION : nom stable, metadonnees, purge (memes regles que phenips_functions.R)
 # =============================================================================
 
