@@ -96,6 +96,36 @@ MODELES <- list(
       list(nom = "Essaimage",   fichier = "steno_essaimage_{variante}_latest.geojson",   champ_label = "libelle")
     )
   ),
+  phenthau = list(
+    label = "PHENTHAU (Thaumetopoea processionea, chene)",
+    meta  = "phenthau_meta.json",
+    fin_saison = "09-30",     # le modele s'arrete au 30 septembre : pas d'alerte de fraicheur apres cette date
+    aide  = paste("Stade atteint a la date des donnees ; L3 = debut du risque urticant (poils urticants).",
+                  "Date d'eclosion = la plus precoce des 3 modeles (Custers, Wagenhoff, Meurisse).",
+                  "Mortalite des L1 = famine entre l'eclosion et le debourrement du chene : elle n'est",
+                  "determinee qu'une fois le debourrement atteint. La classe affichee est la borne haute de la",
+                  "fourchette obtenue avec les 3 modeles d'eclosion (fourchette exacte au survol). Sources :",
+                  "Halbig et al. 2024 (Forest Ecol. Manag. 552:121525) ; eclosion : Custers 2003,",
+                  "Wagenhoff et al. 2014 (Eur. J. Entomol. 111:207-215), Meurisse et al. 2012",
+                  "(Agric. Forest Entomol. 14:239-250)."),
+    avertissement = paste("ATTENTION : modele PHENTHAUproc (Halbig et al. 2024) calibre sur Quercus robur en",
+                          "Allemagne jusqu'a 800 m d'altitude. Hors de ce domaine (sud de la France, montagne),",
+                          "les resultats sont une extrapolation, notamment la mortalite des L1 (eclosion tres",
+                          "precoce par rapport au debourrement). Seules les mailles de 8 km qui croisent au",
+                          "moins un peuplement de chenes decidus (BD Foret IGN) sont affichees."),
+    couches = list(
+      list(nom = "Stade (processionnaire du chene)", fichier = "phenthau_stades_latest.geojson",
+           champ_label = "label"),
+      list(nom = "Debut du risque urticant (L3)", fichier = "phenthau_l3_latest.geojson",
+           champ_label = "date_l3"),
+      list(nom = "Eclosion des L1", fichier = "phenthau_eclosion_latest.geojson",
+           champ_label = "date_eclosion"),
+      list(nom = "Debourrement du chene", fichier = "phenthau_debourrement_latest.geojson",
+           champ_label = "date_debourrement"),
+      list(nom = "Mortalite des L1 (famine)", fichier = "phenthau_mortalite_latest.geojson",
+           champ_label = "label", champ_survol = "survol")
+    )
+  ),
   monochamus = list(
     label = "Monochamus galloprovincialis (bivolt. A + B)",
     couches = list(
@@ -353,7 +383,7 @@ server <- function(input, output, session) {
 
   output$ui_variante <- renderUI({
     m <- MODELES[[input$modele]]
-    if (length(m$variantes) == 0) return(NULL)
+    if (length(m$variantes) == 0) return(if (is.null(m$aide)) NULL else helpText(m$aide))   # PHENTHAU : aide sans scenario
     tagList(
       radioButtons("variante", "Scenario d'exposition",
                    choices = m$variantes, selected = unname(m$variantes[1])),
@@ -395,6 +425,12 @@ server <- function(input, output, session) {
                  strong("Date des donnees inconnue"), " : fichiers indisponibles."))
     }
     age    <- max(0L, as.integer(Sys.Date() - d))
+    # fin de saison (PHENTHAU : serie arretee au 30/09) : donnees completes, pas d'alerte
+    if (!is.null(sel$m$fin_saison) && format(d, "%m-%d") == sel$m$fin_saison) {
+      return(div(style = paste0(base_style, "background:#f1f3f5; border:1px solid #dee2e6; color:#495057;"),
+                 strong(paste0("Donnees au ", format(d, "%d/%m/%Y"))),
+                 " - fin de saison : le modele s'arrete au 30 septembre, la serie de l'annee est complete."))
+    }
     alerte <- age > SEUIL_ALERTE_JOURS
     style  <- if (alerte) "background:#fff3cd; border:1px solid #e0a800; color:#664d03;"
               else        "background:#f1f3f5; border:1px solid #dee2e6; color:#495057;"
@@ -427,6 +463,9 @@ server <- function(input, output, session) {
 
       champ_label <- premier_champ(g, cc$champ_label)
       labels <- if (is.na(champ_label)) NULL else as.character(g[[champ_label]])
+      # texte du survol distinct de la legende (optionnel, ex. fourchette de mortalite PHENTHAU)
+      champ_survol <- premier_champ(g, cc$champ_survol)
+      survol <- if (is.na(champ_survol)) labels else as.character(g[[champ_survol]])
 
       if ("date_iso" %in% names(g)) {
         # [P9] degrade a domaine fixe 15/02 -> 31/08 de l'annee des donnees
@@ -445,7 +484,7 @@ server <- function(input, output, session) {
       } else {
         couleurs <- if ("couleur" %in% names(g)) g$couleur else "#31688E"
         proxy <- addPolygons(proxy, data = g, fillColor = couleurs, color = "#333333",
-                             weight = 0.5, fillOpacity = 0.65, group = cc$nom, label = labels)
+                             weight = 0.5, fillOpacity = 0.65, group = cc$nom, label = survol)
 
         # [P11] legende des classes : une ligne par couple (libelle, couleur)
         if ("couleur" %in% names(g) && !is.na(champ_label)) {

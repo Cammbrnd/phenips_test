@@ -3,6 +3,7 @@
 # -----------------------------------------------------------------------------
 #   epicea -> PHENIPS (Ips typographus) et CHAPY (Pityogenes chalcographus)
 #   pin    -> STENO (Ips sexdentatus)
+#   chene  -> PHENTHAU (Thaumetopoea processionea ; "Chenes decidus")
 # Les fichiers data/masques/masque_<nom>.csv sont produits par R/construire_masques.R
 # (BD Foret V2, IGN). Une maille masquee passe a NA dans tous les rasters
 # meteo : le modele ne la calcule pas et elle n'apparait pas dans les GeoJSON.
@@ -29,7 +30,7 @@ charger_masque <- function(nom, modele_raster, seuil = SEUIL_PART_MASQUE) {
   m
 }
 
-appliquer_masque <- function(meteo, masque, nom = "essence") {
+appliquer_masque <- function(meteo, masque, nom = "essence", min_mailles = 100) {
   avant <- sum(!is.na(terra::values(meteo$tmean[[terra::nlyr(meteo$tmean)]])))
   out <- lapply(meteo, function(r) {
     tps <- terra::time(r)
@@ -41,7 +42,7 @@ appliquer_masque <- function(meteo, masque, nom = "essence") {
   apres <- sum(!is.na(terra::values(out$tmean[[terra::nlyr(out$tmean)]])))
   cat(sprintf(">> Masque %s : %d mailles gardees sur %d avec donnees SAFRAN (%.0f %%)\n",
               nom, apres, avant, 100 * apres / max(avant, 1)))
-  if (apres < 100)
-    stop("Masque '", nom, "' : moins de 100 mailles avec donnees apres masquage", call. = FALSE)
+  if (apres < min_mailles)   # min_mailles abaisse uniquement par les tests sur petite emprise
+    stop("Masque '", nom, "' : moins de ", min_mailles, " mailles avec donnees apres masquage", call. = FALSE)
   out
 }

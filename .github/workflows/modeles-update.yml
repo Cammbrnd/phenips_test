@@ -17,6 +17,27 @@ on:
         description: "Construit les masques epicea / pin (BD Foret IGN) dans data/masques/, sans modeles"
         type: boolean
         default: false
+      masques:
+        description: "Avec construire_masques : liste a reconstruire, separee par des virgules (epicea, pin, chene). Vide = tous"
+        type: string
+        default: ""
+      diagnostic_phenthau:
+        description: "Diagnostic seul : teste PHENTHAUproc (chene) sur 2 petites zones SAFRAN, ecrit data/diag/, sans modeles"
+        type: boolean
+        default: false
+      test_phenthau:
+        description: "Test PHENTHAU sur 2 petites emprises (Alsace-Vosges, Toulouse), annees 2023-2025 : ecrit data/diag/phenthau_test, sans modeles"
+        type: boolean
+        default: false
+      def_eclosion:
+        description: "Avec test_phenthau : definition de l'eclosion, first (la plus precoce des 3 modeles) ou mean (jour moyen). Sortie dans data/diag/phenthau_test_mean si mean"
+        type: choice
+        options: [first, mean]
+        default: first
+      test_amont:
+        description: "Test du fetch SAFRAN amont national (sept-dec N-1) pour PHENTHAU : ecrit un bilan dans data/diag, sans modeles"
+        type: boolean
+        default: false
       historique_diag:
         description: "Historique 1960+ : diagnostic GeoSAS (couverture temporelle, debit), ecrit data/diag/"
         type: boolean
@@ -56,7 +77,7 @@ jobs:
     # compiles (terra, sf) du cache sont lies aux bibliotheques systeme GDAL/PROJ de
     # l'image qui les a produits ; changer d'image sans changer le cache les casse.
     runs-on: ubuntu-24.04
-    timeout-minutes: 180   # 4 modelisations + 1 telechargement partage (~121 requetes SAFRAN)
+    timeout-minutes: 180   # 5 modelisations + 1 telechargement partage (~121 requetes SAFRAN) + amont PHENTHAU (cache apres le 1er run)
 
     env:
       # "true"  : un trou de couverture SAFRAN fait ECHOUER le run (rien n'est publie)
@@ -100,7 +121,7 @@ jobs:
           echo "::warning::renv.lock absent : versions des packages non figees (lancer R/init_renv.R en local)"
           Rscript -e '
             pkgs <- c("barrks","terra","httr2","ggplot2","tidyterra","lubridate",
-                      "glue","sf","scales","data.table","dplyr","jsonlite")
+                      "glue","sf","scales","data.table","dplyr","jsonlite","PHENTHAUproc")
             # requireNamespace() CHARGE vraiment le package (dyn.load) : un binaire en cache
             # lie a des bibliotheques systeme anciennes est detecte et reinstalle.
             ok <- vapply(pkgs, function(p) suppressWarnings(requireNamespace(p, quietly = TRUE)), logical(1))
@@ -132,10 +153,31 @@ jobs:
 
       - name: Construire les masques d'essence (mode masques uniquement)
         if: ${{ inputs.construire_masques }}
+        env:
+          MASQUES: ${{ inputs.masques }}
         run: Rscript R/construire_masques.R
 
+      - name: Diagnostic PHENTHAUproc (mode diagnostic uniquement)
+        if: ${{ inputs.diagnostic_phenthau }}
+        run: Rscript R/diag_phenthau.R
+
+      - name: Test PHENTHAU petite emprise (mode test uniquement)
+        if: ${{ inputs.test_phenthau }}
+        env:
+          PHENTHAU_TEST_EMPRISE: "987929,6754449,1051929,6818449;542008,6247127,606008,6311127"
+          PHENTHAU_TEST_ANNEES: "2023,2024,2025"
+          PHENTHAU_DEF_ECLOSION: ${{ inputs.def_eclosion }}
+          PHENTHAU_DIR_OUT: ${{ inputs.def_eclosion == 'mean' && 'data/diag/phenthau_test_mean' || 'data/diag/phenthau_test' }}
+        run: Rscript R/pipeline_phenthau.R
+
+      - name: Test fetch SAFRAN amont national (mode test uniquement)
+        if: ${{ inputs.test_amont }}
+        run: |
+          Rscript R/fetch_safran_amont.R
+          Rscript R/diag_phenthau_amont.R
+
       - name: Publier diagnostic / masques (data/diag, data/masques)
-        if: ${{ inputs.diagnostic_bdforet || inputs.construire_masques }}
+        if: ${{ inputs.diagnostic_bdforet || inputs.construire_masques || inputs.diagnostic_phenthau || inputs.test_phenthau || inputs.test_amont }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -152,30 +194,30 @@ jobs:
           exit 1
 
       - name: 1. Recuperation SAFRAN partagee (une seule fois pour les 4 modeles)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/fetch_safran.R
 
       - name: 2. PHENIPS (Ips typographus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/pipeline_phenips.R
 
       - name: 3. CHAPY (Pityogenes chalcographus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/pipeline_chapy.R
 
       - name: 4. STENO (Ips sexdentatus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/pipeline_steno.R
 
       - name: 5. Monochamus galloprovincialis (bivoltisme A + B)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/pipeline_monochamus.R
 
       # [P15] -A : prend aussi en compte les fichiers SUPPRIMES (purge des anciens
       # fichiers dates). Retry : si un autre commit est arrive entre-temps,
       # on se rebase dessus puis on repousse.
       - name: 6. Publier les GeoJSON (commit unique)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -193,9 +235,55 @@ jobs:
           echo "::error::Impossible de publier apres 3 essais"
           exit 1
 
+      # PHENTHAU (chene) : etapes APRES la publication des 4 modeles, en continue-on-error.
+      # Un echec ne bloque ni ne retarde les 4 modeles (deja publies) ; il est signale par le ticket.
+      - name: 7. SAFRAN amont sept-dec N-1 (PHENTHAU)
+        id: phenthau_amont
+        continue-on-error: true
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
+        run: Rscript R/fetch_safran_amont.R
+
+      - name: 8. PHENTHAU (Thaumetopoea processionea, chene)
+        id: phenthau
+        continue-on-error: true
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont && steps.phenthau_amont.outcome == 'success' }}
+        run: Rscript R/pipeline_phenthau.R
+
+      - name: 9. Publier PHENTHAU (commit separe)
+        if: ${{ steps.phenthau.outcome == 'success' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A -- 'data/phenthau_*.geojson' 'data/phenthau_*.json'
+          if git diff --cached --quiet; then
+            echo "Rien de nouveau a publier"
+            exit 0
+          fi
+          git commit -m "MAJ PHENTHAU $(date -u +%Y-%m-%d)"
+          for essai in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "Echec du push (essai ${essai}/3), nouvel essai dans 15 s"
+            sleep 15
+          done
+          echo "::error::Impossible de publier PHENTHAU apres 3 essais"
+          exit 1
+
+      # GeoTIFF (17 bandes de DOY par maille) et PNG nationaux : non commites (comme pour les autres
+      # modeles), conserves 30 jours en artefact du run.
+      - name: Archiver les GeoTIFF et PNG PHENTHAU (artefact du run)
+        if: ${{ !cancelled() && steps.phenthau.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: phenthau-rasters
+          path: |
+            data/phenthau_*.tif
+            data/phenthau_*.png
+          retention-days: 30
+          if-no-files-found: warn
+
       # [P15] Notification d'echec : un ticket ouvert (ou commente s'il existe deja)
       - name: Signaler l'echec par un ticket GitHub
-        if: ${{ failure() && !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques }}
+        if: ${{ always() && (failure() || steps.phenthau_amont.outcome == 'failure' || steps.phenthau.outcome == 'failure') && !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

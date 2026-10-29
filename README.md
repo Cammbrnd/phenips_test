@@ -199,6 +199,7 @@ l'essence-hôte** :
 |---|---|---|
 | PHENIPS-Clim, CHAPY | sapin / épicéa | `data/masques/masque_epicea.csv` |
 | STENO-DJ | tous les pins | `data/masques/masque_pin.csv` |
+| PHENTHAU | chênes décidus (« Chênes décidus », hors sempervirents) | `data/masques/masque_chene.csv` |
 
 - Source : **IGN, BD Forêt® V2** (WFS Géoplateforme, couche
   `LANDCOVER.FORESTINVENTORY.V2:formation_vegetale`, champ `essence`). Épicéa = classe
@@ -269,3 +270,58 @@ Carte d'une année (curseur animable), moyenne sur une période, ou tendance par
 (régression linéaire maille par maille, grisage des tendances non significatives à p > 0,05) ;
 clic sur une maille pour afficher sa série temporelle face à la moyenne de toutes les mailles.
 L'app ne fait que lire les tables du dépôt (aucun calcul lourd).
+
+## PHENTHAU : processionnaire du chêne (*Thaumetopoea processionea*)
+
+5e modèle, package CRAN **PHENTHAUproc** (Halbig et al. 2024, *Forest Ecol. Manag.* 552:121525),
+mode régional `dailymeanminmax` : températures **journalières** SAFRAN (`T_Q`, `TINF_H_Q`,
+`TSUP_H_Q`), sans reconstruction horaire.
+
+- **Calcul** : `R/pipeline_phenthau.R` (fonctions dans `R/phenthau_functions.R`), à la suite des
+  4 autres modèles dans `modeles-update.yml` (étapes 7 à 9, `continue-on-error` : un échec
+  PHENTHAU ne bloque pas les 4 modèles, déjà publiés, et ouvre le ticket d'échec).
+- **Données amont** : le package compte les jours de froid depuis le **1er septembre N-1**.
+  `R/fetch_safran_amont.R` récupère septembre-décembre N-1 (même contrôle qualité que le fetch
+  partagé, cache `safran_v2_*_<N-1>.csv`, sortie `data/cache_meteo/meteo_amont.rds`) ; le fetch
+  partagé (1er janvier N) n'est pas modifié.
+- **Sorties** (`data/`) : `phenthau_{stades,l3,eclosion,debourrement,mortalite}_<date>.geojson`
+  (+ `_latest`), `phenthau_meta.json`. GeoTIFF L93 (22 bandes par maille : jours de l'année des stades, mortalités) et PNG
+  nationaux : artefact `phenthau-rasters` du run (30 jours), non commités. Champs GeoJSON :
+  `espece`, `modele = "PHENTHAU"`, `couleur`, `label`, `date_iso`, `avertissement`.
+- **Éclosion** : `DEF_ECLOSION = "first"` (la plus précoce des 3 modèles : Custers, Wagenhoff,
+  Meurisse). L'option `mean` du package n'a pas d'effet utile (testée sur 2 zones × 3 ans :
+  mêmes dates de stades).
+- **Mortalité des L1** : publiée seulement une fois le débourrement atteint (avant, le package
+  renvoie 0). Le package ne donne qu'**une** valeur, celle de l'éclosion la plus précoce
+  (`first`). On la recalcule avec **chacun des 3 modèles d'éclosion** : la couche `mortalite`
+  porte donc `mort_custers_pct`, `mort_wagenhoff_pct`, `mort_meurisse_pct`, la **fourchette**
+  `mort_min_pct` – `mort_max_pct` (texte `fourchette`) et la source (`source_mortalite`). La
+  mortalité `first` (classes de couleur) est la **borne haute** de la fourchette (éclosion plus
+  précoce = écart plus long au débourrement = mortalité plus forte) ; le calcul vérifie cette
+  égalité et n'ajoute pas la fourchette si elle échoue. Les mortalités du package sont des
+  paliers (0, 5, 10, 25, 50, 75, 100 %) déduits de la somme de températures entre l'éclosion et
+  le débourrement.
+  Sources de la fourchette :
+  - mortalité par famine et chaîne de calcul : Halbig P., Stelzer A.S., Baier P., Pennerstorfer J.,
+    Delb H., Schopf A. (2024) PHENTHAUproc, *Forest Ecol. Manag.* 552:121525,
+    doi:10.1016/j.foreco.2023.121525 (voir aussi Wagenhoff et al. 2013, *J. Pest Sci.* 86:193-202,
+    doi:10.1007/s10340-012-0457-7, cité par le package pour la mortalité) ;
+  - éclosion, modèle Custers : Custers C. (2003) *Climate change and trophic synchronisation*,
+    mémoire de master, Wageningen UR ;
+  - éclosion, modèle Wagenhoff : Wagenhoff E., Wagenhoff A., Blum R., Veit H., Zapf D., Delb H.
+    (2014) *Eur. J. Entomol.* 111:207-215, doi:10.14411/eje.2014.030 ;
+  - éclosion, modèle Meurisse : Meurisse N., Hoch G., Schopf A., Battisti A., Grégoire J.-C.
+    (2012) *Agric. Forest Entomol.* 14:239-250, doi:10.1111/j.1461-9563.2011.00562.x ;
+  - débourrement : *Quercus robur*, paramétrisation `quercus_robur_clone256_type1` (défaut du
+    package).
+  Les trois modèles sont calibrés en Allemagne (≤ 800 m) : la fourchette mesure le désaccord
+  entre modèles, **pas** une incertitude statistique. Détail technique : `PHENTHAUproc::mortality()`
+  échoue avec `custers` ou `wagenhoff` seuls (vecteurs temps différents) ; le pipeline appelle donc
+  la fonction interne `calc_mortality()` avec les sorties de `phenthau()`.
+- **Limite d'applicabilité** : calibré sur *Quercus robur* en Allemagne, jusqu'à 800 m. Hors de ce
+  domaine (sud de la France, montagne), c'est une extrapolation : au sud-ouest, l'éclosion
+  (Meurisse) précède de 3 à 4 semaines le débourrement et la mortalité L1 dépasse 50 % sur presque
+  toutes les mailles. À lire comme un indicateur, pas comme une prévision validée.
+- **Tests** (entrées *Run workflow*) : `diagnostic_phenthau`, `test_phenthau` (2 petites emprises,
+  2023-2025, `def_eclosion` first/mean), `test_amont` (fetch amont national, bilan dans
+  `data/diag/`), `masques=chene` avec `construire_masques`.

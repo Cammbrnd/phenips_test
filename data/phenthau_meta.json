@@ -1,0 +1,13 @@
+{
+  "date_donnees": "2026-09-30",
+  "date_generation": "2026-10-29T07:49:32Z",
+  "annee": 2026,
+  "espece": "Thaumetopoea processionea",
+  "modele": "PHENTHAU",
+  "phenthauproc_version": "1.1.2",
+  "def_eclosion": "first",
+  "mailles": 6978,
+  "avertissement": "Modele calibre sur Quercus robur en Allemagne jusqu'a 800 m : hors de ce domaine (sud de la France, montagne) les resultats sont une extrapolation",
+  "source": "Source : Meteo-France (donnees SAFRAN) via GeoSAS INRAE ; modele PHENTHAUproc (Halbig et al. 2024)",
+  "source_mortalite": "Mortalite L1 par famine (ecart eclosion - debourrement du chene, somme de temperatures) : Halbig et al. 2024, Forest Ecol. Manag. 552:121525 (doi:10.1016/j.foreco.2023.121525). Fourchette = min-max des 3 modeles d'eclosion : Custers 2003 (Climate change and trophic synchronisation, Wageningen UR) ; Wagenhoff et al. 2014 (Eur. J. Entomol. 111:207-215, doi:10.14411/eje.2014.030) ; Meurisse et al. 2012 (Agric. Forest Entomol. 14:239-250, doi:10.1111/j.1461-9563.2011.00562.x). Debourrement : Quercus robur, parametrisation quercus_robur_clone256_type1."
+}
