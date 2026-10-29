@@ -102,7 +102,11 @@ MODELES <- list(
     aide  = paste("Stade atteint a la date des donnees ; L3 = debut du risque urticant (poils urticants).",
                   "Date d'eclosion = la plus precoce des 3 modeles (Custers, Wagenhoff, Meurisse).",
                   "Mortalite des L1 = famine entre l'eclosion et le debourrement du chene : elle n'est",
-                  "determinee qu'une fois le debourrement atteint."),
+                  "determinee qu'une fois le debourrement atteint. La classe affichee est la borne haute de la",
+                  "fourchette obtenue avec les 3 modeles d'eclosion (fourchette exacte au survol). Sources :",
+                  "Halbig et al. 2024 (Forest Ecol. Manag. 552:121525) ; eclosion : Custers 2003,",
+                  "Wagenhoff et al. 2014 (Eur. J. Entomol. 111:207-215), Meurisse et al. 2012",
+                  "(Agric. Forest Entomol. 14:239-250)."),
     avertissement = paste("ATTENTION : modele PHENTHAUproc (Halbig et al. 2024) calibre sur Quercus robur en",
                           "Allemagne jusqu'a 800 m d'altitude. Hors de ce domaine (sud de la France, montagne),",
                           "les resultats sont une extrapolation, notamment la mortalite des L1 (eclosion tres",
@@ -118,7 +122,7 @@ MODELES <- list(
       list(nom = "Debourrement du chene", fichier = "phenthau_debourrement_latest.geojson",
            champ_label = "date_debourrement"),
       list(nom = "Mortalite des L1 (famine)", fichier = "phenthau_mortalite_latest.geojson",
-           champ_label = "label")
+           champ_label = "label", champ_survol = "survol")
     )
   ),
   monochamus = list(
@@ -452,6 +456,9 @@ server <- function(input, output, session) {
 
       champ_label <- premier_champ(g, cc$champ_label)
       labels <- if (is.na(champ_label)) NULL else as.character(g[[champ_label]])
+      # texte du survol distinct de la legende (optionnel, ex. fourchette de mortalite PHENTHAU)
+      champ_survol <- premier_champ(g, cc$champ_survol)
+      survol <- if (is.na(champ_survol)) labels else as.character(g[[champ_survol]])
 
       if ("date_iso" %in% names(g)) {
         # [P9] degrade a domaine fixe 15/02 -> 31/08 de l'annee des donnees
@@ -470,7 +477,7 @@ server <- function(input, output, session) {
       } else {
         couleurs <- if ("couleur" %in% names(g)) g$couleur else "#31688E"
         proxy <- addPolygons(proxy, data = g, fillColor = couleurs, color = "#333333",
-                             weight = 0.5, fillOpacity = 0.65, group = cc$nom, label = labels)
+                             weight = 0.5, fillOpacity = 0.65, group = cc$nom, label = survol)
 
         # [P11] legende des classes : une ligne par couple (libelle, couleur)
         if ("couleur" %in% names(g) && !is.na(champ_label)) {
