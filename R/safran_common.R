@@ -28,9 +28,12 @@ library(data.table)
 library(lubridate)
 
 # --- Periode (identique pour tous les modeles) ---
-ANNEE    <- as.integer(format(Sys.Date(), "%Y"))
+# [historique] ANNEE_SAFRAN (variable d'environnement) force une annee passee ; sans elle,
+# comportement inchange : annee en cours, jusqu'a J-5. Une annee passee va jusqu'au 31/12.
+ANNEE_FORCEE <- suppressWarnings(as.integer(Sys.getenv("ANNEE_SAFRAN", "")))
+ANNEE    <- if (!is.na(ANNEE_FORCEE)) ANNEE_FORCEE else as.integer(format(Sys.Date(), "%Y"))
 DATE_DEB <- as.Date(glue("{ANNEE}-01-01"))
-DATE_FIN_SAFRAN <- Sys.Date() - 5
+DATE_FIN_SAFRAN <- min(as.Date(glue("{ANNEE}-12-31")), Sys.Date() - 5)
 if (DATE_FIN_SAFRAN < DATE_DEB) DATE_FIN_SAFRAN <- DATE_DEB
 
 # --- API GeoSAS ---

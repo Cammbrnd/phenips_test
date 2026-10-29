@@ -27,7 +27,7 @@ library(httr2)
 
 UTILISATEUR_GH <- "Cammbrnd"
 REPO_GH        <- "phenips_test"
-BRANCHE_GH     <- "main"
+BRANCHE_GH     <- Sys.getenv("PHENIPS_BRANCHE", "main")   # "main" en production ; surchargeable pour tester une branche
 
 # Au-dela de ce nombre de jours, la date des donnees est signalee en alerte.
 # SAFRAN est mis a jour par lots : 5 a 26 jours de decalage constates.
@@ -137,21 +137,153 @@ date_depuis_couche <- function(g) {
 }
 
 
+# =============================================================================
+# HISTORIQUE 1960+ : tables annuelles par maille (data/historique/*.csv.gz)
+# =============================================================================
+url_historique <- function(nom) {
+  glue("https://raw.githubusercontent.com/{UTILISATEUR_GH}/{REPO_GH}/{BRANCHE_GH}/data/historique/{nom}")
+}
+
+# prefixe_* : colonnes gen_<scenario> / doy_<scenario> ; col_* : colonnes uniques (CHAPY)
+MODELES_H <- list(
+  phenips = list(
+    label = "PHENIPS-Clim (Ips typographus)", fichier = "phenips_annuel.csv.gz",
+    scenarios = c("Ecorce exposee au sud" = "sunny", "Ecorce a l'ombre" = "shaded"),
+    prefixe_gen = "gen", prefixe_doy = "doy", nom_envol = "premier essaimage",
+    essence = "sapin / epicea",
+    note = paste("Generations presentes au 31/12 : une generation est comptee des qu'elle a commence",
+                 "(x.5 = couvee soeur).")),
+  chapy = list(
+    label = "CHAPY (Pityogenes chalcographus)", fichier = "chapy_annuel.csv.gz",
+    scenarios = NULL, col_gen = "gen", col_doy = "doy_envol", nom_envol = "premier envol",
+    essence = "sapin / epicea",
+    note = paste("Generations presentes au 31/12 : une generation est comptee des qu'elle a commence",
+                 "(x.5 = couvee soeur).")),
+  steno = list(
+    label = "STENO-DJ (Ips sexdentatus)", fichier = "steno_annuel.csv.gz",
+    scenarios = c("Moyen (reference)" = "moyen", "Pire (developpement rapide)" = "pire",
+                  "Moins pire (developpement lent)" = "moins_pire"),
+    prefixe_gen = "gen", prefixe_doy = "doy", nom_envol = "premier envol",
+    essence = "pin",
+    note = "Generations achevees au 31/12 (maxima thermiques, temperature de l'air)."))
+
+colonne_h <- function(m, scenario, quoi) {          # quoi : "gen" ou "doy"
+  if (is.null(m$scenarios)) return(if (quoi == "gen") m$col_gen else m$col_doy)
+  paste(if (quoi == "gen") m$prefixe_gen else m$prefixe_doy, scenario, sep = "_")
+}
+
+# Cache GLOBAL (partage entre sessions) : les tables ne changent qu'a la reconstruction.
+cache_h <- new.env()
+
+lire_table_h <- function(modele) {
+  if (exists(modele, envir = cache_h, inherits = FALSE)) return(get(modele, envir = cache_h))
+  d <- tryCatch({
+    f <- tempfile(fileext = ".csv.gz")
+    request(url_historique(MODELES_H[[modele]]$fichier)) |> req_perform(path = f)
+    read.csv(gzfile(f))
+  }, error = function(e) {
+    message("Erreur lecture historique (", modele, ") : ", conditionMessage(e))
+    NULL
+  })
+  if (is.null(d) || nrow(d) == 0) return(NULL)      # un echec n'est pas memorise
+  d$cle <- d$x * 1e7 + d$y                           # identifiant de maille
+  assign(modele, d, envir = cache_h)
+  d
+}
+
+# Mailles de 8 km (carres L93 -> WGS84), triees par identifiant comme les matrices.
+# Carres construits a la main : st_buffer(endCapStyle = "SQUARE") renvoie des cercles.
+grille_h <- function(modele, d) {
+  nom <- paste0("grille_", modele)
+  if (exists(nom, envir = cache_h, inherits = FALSE)) return(get(nom, envir = cache_h))
+  cel <- unique(d[, c("x", "y", "cle")])
+  cel <- cel[order(cel$cle), ]
+  carre <- function(x, y, h = 4000)
+    sf::st_polygon(list(cbind(c(x - h, x + h, x + h, x - h, x - h), c(y - h, y - h, y + h, y + h, y - h))))
+  g <- sf::st_sfc(mapply(carre, cel$x, cel$y, SIMPLIFY = FALSE), crs = 2154)
+  g <- sf::st_transform(g, 4326)
+  assign(nom, g, envir = cache_h)
+  g
+}
+
+# Matrice mailles x annees d'une colonne
+matrice_h <- function(d, col) {
+  cles   <- sort(unique(d$cle))
+  annees <- sort(unique(d$annee))
+  M <- matrix(NA_real_, nrow = length(cles), ncol = length(annees), dimnames = list(NULL, annees))
+  M[cbind(match(d$cle, cles), match(d$annee, annees))] <- d[[col]]
+  list(M = M, cles = cles, annees = annees)
+}
+
+# Pente (par decennie) et p-value du test de correlation, maille par maille.
+# Maille ignoree si moins de 20 annees renseignees ou valeur constante.
+tendance_h <- function(M, annees) {
+  r <- t(apply(M, 1, function(y) {
+    ok <- !is.na(y); n <- sum(ok)
+    if (n < 20 || length(unique(y[ok])) < 2) return(c(NA_real_, NA_real_))
+    x <- annees[ok]; yy <- y[ok]
+    xm <- mean(x)
+    b  <- sum((x - xm) * (yy - mean(yy))) / sum((x - xm)^2)
+    cc <- cor(x, yy)
+    p  <- if (abs(cc) >= 1) 0 else 2 * pt(-abs(cc * sqrt((n - 2) / (1 - cc^2))), n - 2)
+    c(b * 10, p)
+  }))
+  list(pente = r[, 1], p = r[, 2])
+}
+
+etiquette_doy <- function(type, cuts, p) format(as.Date(round(cuts) - 1, origin = "2001-01-01"), "%d/%m")
+
+
 ui <- fluidPage(
   titlePanel("Phenologie forestiere - France metropolitaine"),
-  fluidRow(
-    column(3,
-      selectInput("modele", "Modele",
-                  choices  = setNames(names(MODELES), sapply(MODELES, `[[`, "label")),
-                  selected = "phenips"),
-      uiOutput("ui_variante")
+  tabsetPanel(
+    id = "onglet",
+    tabPanel(
+      "Situation actuelle",
+      fluidRow(
+        column(3,
+          selectInput("modele", "Modele",
+                      choices  = setNames(names(MODELES), sapply(MODELES, `[[`, "label")),
+                      selected = "phenips"),
+          uiOutput("ui_variante")
+        ),
+        column(9,
+          uiOutput("bandeau"),
+          uiOutput("avertissement")
+        )
+      ),
+      leafletOutput("carte", height = "68vh")
     ),
-    column(9,
-      uiOutput("bandeau"),
-      uiOutput("avertissement")
+    tabPanel(
+      "Historique 1960-2025",
+      fluidRow(
+        column(3,
+          selectInput("h_modele", "Modele",
+                      choices = setNames(names(MODELES_H), sapply(MODELES_H, `[[`, "label"))),
+          uiOutput("ui_h_scenario"),
+          radioButtons("h_variable", "Variable",
+                       choices = c("Nombre de generations" = "gen", "Date du premier envol" = "doy")),
+          radioButtons("h_vue", "Affichage",
+                       choices = c("Une annee" = "annee", "Moyenne sur une periode" = "moyenne",
+                                   "Tendance (par decennie)" = "tendance")),
+          conditionalPanel("input.h_vue == 'annee'",
+            sliderInput("h_annee", "Annee", min = 1960, max = 2025, value = 2025, step = 1, sep = "",
+                        animate = animationOptions(interval = 1000))),
+          conditionalPanel("input.h_vue != 'annee'",
+            sliderInput("h_periode", "Periode", min = 1960, max = 2025, value = c(1960, 2025),
+                        step = 1, sep = "")),
+          conditionalPanel("input.h_vue == 'tendance'",
+            checkboxInput("h_signif", "Griser les tendances non significatives (p > 0,05)", value = TRUE)),
+          uiOutput("note_h")
+        ),
+        column(9,
+          uiOutput("bandeau_h"),
+          leafletOutput("carte_h", height = "52vh"),
+          plotOutput("serie_h", height = "230px")
+        )
+      )
     )
   ),
-  leafletOutput("carte", height = "68vh"),
   tags$p(
     style = "font-size: 11px; color: #6c757d; margin: 6px 0 12px 0;",
     paste("Source : Meteo-France (donnees SAFRAN), via GeoSAS INRAE ; essences : IGN, BD Foret V2.",
@@ -275,7 +407,7 @@ server <- function(input, output, session) {
   # --- Carte ----------------------------------------------------------------------
   output$carte <- renderLeaflet({
     leaflet() |>
-      addProviderTiles("CartoDB.Positron") |>
+      addProviderTiles("OpenStreetMap.France") |>
       setView(lng = 2.5, lat = 46.5, zoom = 6)
   })
 
@@ -341,6 +473,165 @@ server <- function(input, output, session) {
       if (length(groupes) > 1) proxy <- hideGroup(proxy, groupes[-1])
     }
   })
+
+  # ===========================================================================
+  # ONGLET HISTORIQUE
+  # ===========================================================================
+  m_h <- reactive({ req(input$h_modele); MODELES_H[[input$h_modele]] })
+
+  output$ui_h_scenario <- renderUI({
+    m <- m_h()
+    if (is.null(m$scenarios)) return(NULL)
+    radioButtons("h_scenario", "Scenario", choices = m$scenarios, selected = unname(m$scenarios[1]))
+  })
+
+  output$note_h <- renderUI({
+    m <- m_h()
+    helpText(paste0("Mailles avec ", m$essence, " (BD Foret IGN). ", m$note),
+             " Chaque annee est calculee de janvier a decembre, sans lien avec l'annee precedente.")
+  })
+
+  # Chargement a la demande : seulement quand l'onglet est ouvert
+  table_h <- reactive({
+    req(input$onglet == "Historique 1960-2025")
+    lire_table_h(req(input$h_modele))
+  })
+
+  # Colonne choisie ; le scenario n'est lu que s'il appartient au modele courant
+  col_h <- reactive({
+    m <- m_h()
+    sc <- if (is.null(m$scenarios)) NULL else
+            if (isTRUE(input$h_scenario %in% m$scenarios)) input$h_scenario else unname(m$scenarios[1])
+    colonne_h(m, sc, req(input$h_variable))
+  })
+
+  mat_h <- reactive({
+    d <- table_h()
+    shiny::validate(shiny::need(!is.null(d), "Tables historiques indisponibles (pas encore calculees ?)."))
+    col <- col_h()
+    shiny::validate(shiny::need(col %in% names(d), "Colonne absente de la table."))
+    matrice_h(d, col)
+  })
+
+  # Les curseurs suivent les annees reellement presentes dans la table
+  observeEvent(table_h(), {
+    an <- range(table_h()$annee)
+    updateSliderInput(session, "h_annee", min = an[1], max = an[2], value = an[2])
+    updateSliderInput(session, "h_periode", min = an[1], max = an[2], value = an)
+  })
+
+  cle_choisie <- reactiveVal(NULL)
+  observeEvent(list(input$h_modele, input$h_scenario, input$h_variable), cle_choisie(NULL), ignoreInit = TRUE)
+  observeEvent(input$carte_h_shape_click, cle_choisie(as.numeric(input$carte_h_shape_click$id)))
+
+  annee_h <- debounce(reactive(input$h_annee), 250)
+
+  # Valeurs a cartographier : un vecteur par maille + palette + legende
+  valeurs_h <- reactive({
+    mt <- mat_h(); M <- mt$M
+    vue <- req(input$h_vue); variable <- req(input$h_variable)
+    domaine <- if (variable == "doy") quantile(M, c(0.01, 0.99), na.rm = TRUE) else range(M, na.rm = TRUE)
+    domaine <- as.numeric(domaine)
+    if (diff(domaine) == 0) domaine <- domaine + c(-0.5, 0.5)
+
+    if (vue == "annee") {
+      an <- req(annee_h())
+      shiny::validate(shiny::need(as.character(an) %in% colnames(M), "Annee absente de la table."))
+      v <- M[, as.character(an)]
+      titre <- as.character(an)
+    } else {
+      per <- req(input$h_periode)
+      cols <- which(mt$annees >= per[1] & mt$annees <= per[2])
+      shiny::validate(shiny::need(length(cols) >= 2, "Choisir une periode d'au moins 2 annees."))
+      if (vue == "moyenne") {
+        v <- rowMeans(M[, cols, drop = FALSE], na.rm = TRUE); v[is.nan(v)] <- NA
+        titre <- sprintf("moyenne %d-%d", per[1], per[2])
+      } else {
+        tr <- tendance_h(M[, cols, drop = FALSE], mt$annees[cols])
+        v <- tr$pente
+        titre <- sprintf("tendance %d-%d", per[1], per[2])
+      }
+    }
+
+    if (vue == "tendance") {
+      lim <- as.numeric(quantile(abs(tr$pente), 0.98, na.rm = TRUE)); if (!is.finite(lim) || lim == 0) lim <- 1
+      pal <- colorNumeric("RdBu", domain = c(-lim, lim), na.color = "#cccccc",
+                          reverse = (variable == "gen"))      # chaud = plus de generations / envol plus precoce
+      unite <- if (variable == "gen") "generations par decennie" else "jours par decennie"
+      list(v = pmax(pmin(v, lim), -lim), brut = v, p = tr$p, pal = pal, dom = c(-lim, lim),
+           titre = titre, legende = unite, fmt = labelFormat(digits = 2), tendance = TRUE)
+    } else {
+      pal <- colorNumeric("YlOrRd", domain = domaine, na.color = "#cccccc", reverse = (variable == "doy"))
+      list(v = pmax(pmin(v, domaine[2]), domaine[1]), brut = v, pal = pal, dom = domaine, titre = titre,
+           legende = if (variable == "gen") "Generations" else "Premier envol (jj/mm)",
+           fmt = if (variable == "gen") labelFormat(digits = 1) else etiquette_doy, tendance = FALSE)
+    }
+  })
+
+  output$bandeau_h <- renderUI({
+    vh <- tryCatch(valeurs_h(), error = function(e) NULL)
+    if (is.null(vh)) return(NULL)
+    div(style = "font-size: 13px; color: #495057; margin: 8px 0;",
+        strong(paste0(m_h()$label, " - ", if (input$h_variable == "gen") "nombre de generations" else
+                        paste0("date du ", m_h()$nom_envol), " - ", vh$titre)))
+  })
+
+  output$carte_h <- renderLeaflet({
+    leaflet() |>
+      addProviderTiles("OpenStreetMap.France") |>
+      setView(lng = 2.5, lat = 46.5, zoom = 6)
+  })
+
+  # La carte n'existe qu'a l'ouverture de l'onglet : on attend qu'elle ait envoye ses limites
+  carte_h_prete <- reactiveVal(FALSE)
+  observeEvent(input$carte_h_bounds, carte_h_prete(TRUE), once = TRUE)
+
+  observe({
+    req(carte_h_prete())
+    vh <- valeurs_h(); mt <- mat_h()
+    g  <- grille_h(req(input$h_modele), table_h())
+    v  <- vh$v
+    couleur <- vh$pal(v)
+    opac <- rep(0.75, length(v))
+    if (isTRUE(vh$tendance) && isTRUE(input$h_signif)) {
+      ns <- is.na(vh$p) | vh$p > 0.05
+      couleur[ns] <- "#d9d9d9"; opac[ns] <- 0.45
+    }
+    texte <- if (isTRUE(vh$tendance)) {
+      sprintf("%s %+.2f (p = %s)", vh$legende, vh$brut, ifelse(is.na(vh$p), "-", formatC(vh$p, digits = 2, format = "g")))
+    } else if (input$h_variable == "doy") {
+      ifelse(is.na(vh$brut), "pas d'envol", format(as.Date(round(vh$brut) - 1, origin = "2001-01-01"), "%d/%m"))
+    } else {
+      ifelse(is.na(vh$brut), "-", formatC(vh$brut, digits = 1, format = "f"))
+    }
+    proxy <- leafletProxy("carte_h") |> clearShapes() |> clearControls()
+    proxy <- addPolygons(proxy, data = sf::st_sf(geometry = g), layerId = as.character(mt$cles),
+                         fillColor = couleur, fillOpacity = opac, color = "#333333", weight = 0.3,
+                         label = texte)
+    addLegend(proxy, position = "bottomright", pal = vh$pal, values = vh$dom,
+              title = vh$legende, labFormat = vh$fmt, opacity = 0.9)
+  })
+
+  output$serie_h <- renderPlot({
+    mt <- mat_h(); M <- mt$M; an <- mt$annees
+    moy <- colMeans(M, na.rm = TRUE)
+    unite <- if (input$h_variable == "gen") "generations" else "jour de l'annee (1er envol)"
+    i <- if (is.null(cle_choisie())) NA_integer_ else match(cle_choisie(), mt$cles)
+    y <- if (is.na(i)) NULL else M[i, ]
+    par(mar = c(3, 4.2, 2.2, 0.8))
+    plot(an, moy, type = "l", lwd = 2, col = "grey55", xlab = "", ylab = unite,
+         ylim = range(c(moy, y), na.rm = TRUE),
+         main = if (is.null(y)) "Moyenne de toutes les mailles (cliquer sur une maille pour sa serie)"
+                else "Maille choisie (rouge) et moyenne de toutes les mailles (gris)")
+    ok <- is.finite(moy)
+    if (sum(ok) > 3) abline(lm(moy[ok] ~ an[ok]), lty = 2, col = "grey30")
+    if (!is.null(y)) {
+      lines(an, y, col = "#C0392B", lwd = 2); points(an, y, col = "#C0392B", pch = 16, cex = 0.6)
+      oky <- is.finite(y)
+      if (sum(oky) > 3) abline(lm(y[oky] ~ an[oky]), lty = 2, col = "#C0392B")
+    }
+  })
+
 }
 
 shinyApp(ui, server)
