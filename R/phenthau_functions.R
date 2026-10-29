@@ -30,7 +30,8 @@ MODELE_PHENTHAU <- "PHENTHAU"
 
 # Definition de la date d'eclosion des L1 utilisee pour la suite du modele :
 # "first" = la plus precoce des 3 modeles (defaut du package) ; "mean" = jour moyen.
-DEF_ECLOSION <- "first"
+DEF_ECLOSION <- Sys.getenv("PHENTHAU_DEF_ECLOSION", "first")   # variable d'environnement : tests de comparaison seulement
+if (!DEF_ECLOSION %in% c("first", "mean")) stop("PHENTHAU_DEF_ECLOSION doit valoir first ou mean", call. = FALSE)
 
 SOURCE_PHENTHAU <- paste0("Source : Meteo-France (donnees SAFRAN) via GeoSAS INRAE ; ",
                           "modele PHENTHAUproc (Halbig et al. 2024)")

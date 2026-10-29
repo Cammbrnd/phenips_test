@@ -29,6 +29,11 @@ on:
         description: "Test PHENTHAU sur 2 petites emprises (Alsace-Vosges, Toulouse), annees 2023-2025 : ecrit data/diag/phenthau_test, sans modeles"
         type: boolean
         default: false
+      def_eclosion:
+        description: "Avec test_phenthau : definition de l'eclosion, first (la plus precoce des 3 modeles) ou mean (jour moyen). Sortie dans data/diag/phenthau_test_mean si mean"
+        type: choice
+        options: [first, mean]
+        default: first
       test_amont:
         description: "Test du fetch SAFRAN amont national (sept-dec N-1) pour PHENTHAU : ecrit un bilan dans data/diag, sans modeles"
         type: boolean
@@ -144,7 +149,8 @@ jobs:
         env:
           PHENTHAU_TEST_EMPRISE: "987929,6754449,1051929,6818449;542008,6247127,606008,6311127"
           PHENTHAU_TEST_ANNEES: "2023,2024,2025"
-          PHENTHAU_DIR_OUT: data/diag/phenthau_test
+          PHENTHAU_DEF_ECLOSION: ${{ inputs.def_eclosion }}
+          PHENTHAU_DIR_OUT: ${{ inputs.def_eclosion == 'mean' && 'data/diag/phenthau_test_mean' || 'data/diag/phenthau_test' }}
         run: Rscript R/pipeline_phenthau.R
 
       - name: Test fetch SAFRAN amont national (mode test uniquement)
