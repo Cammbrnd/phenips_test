@@ -99,6 +99,7 @@ MODELES <- list(
   phenthau = list(
     label = "PHENTHAU (Thaumetopoea processionea, chene)",
     meta  = "phenthau_meta.json",
+    fin_saison = "09-30",     # le modele s'arrete au 30 septembre : pas d'alerte de fraicheur apres cette date
     aide  = paste("Stade atteint a la date des donnees ; L3 = debut du risque urticant (poils urticants).",
                   "Date d'eclosion = la plus precoce des 3 modeles (Custers, Wagenhoff, Meurisse).",
                   "Mortalite des L1 = famine entre l'eclosion et le debourrement du chene : elle n'est",
@@ -424,6 +425,12 @@ server <- function(input, output, session) {
                  strong("Date des donnees inconnue"), " : fichiers indisponibles."))
     }
     age    <- max(0L, as.integer(Sys.Date() - d))
+    # fin de saison (PHENTHAU : serie arretee au 30/09) : donnees completes, pas d'alerte
+    if (!is.null(sel$m$fin_saison) && format(d, "%m-%d") == sel$m$fin_saison) {
+      return(div(style = paste0(base_style, "background:#f1f3f5; border:1px solid #dee2e6; color:#495057;"),
+                 strong(paste0("Donnees au ", format(d, "%d/%m/%Y"))),
+                 " - fin de saison : le modele s'arrete au 30 septembre, la serie de l'annee est complete."))
+    }
     alerte <- age > SEUIL_ALERTE_JOURS
     style  <- if (alerte) "background:#fff3cd; border:1px solid #e0a800; color:#664d03;"
               else        "background:#f1f3f5; border:1px solid #dee2e6; color:#495057;"
