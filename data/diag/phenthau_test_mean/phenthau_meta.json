@@ -1,0 +1,12 @@
+{
+  "date_donnees": "2025-09-30",
+  "date_generation": "2026-10-29T07:02:27Z",
+  "annee": 2025,
+  "espece": "Thaumetopoea processionea",
+  "modele": "PHENTHAU",
+  "phenthauproc_version": "1.1.2",
+  "def_eclosion": "mean",
+  "mailles": 103,
+  "avertissement": "Modele calibre sur Quercus robur en Allemagne jusqu'a 800 m : hors de ce domaine (sud de la France, montagne) les resultats sont une extrapolation",
+  "source": "Source : Meteo-France (donnees SAFRAN) via GeoSAS INRAE ; modele PHENTHAUproc (Halbig et al. 2024)"
+}
