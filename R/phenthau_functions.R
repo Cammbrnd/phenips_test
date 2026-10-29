@@ -134,14 +134,22 @@ modeliser_phenthau <- function(serie, annee = ANNEE, def_hatch = DEF_ECLOSION) {
     calc_mort <- utils::getFromNamespace("calc_mortality", "PHENTHAUproc")
     mm <- lapply(stats::setNames(MODELES_ECLOSION, MODELES_ECLOSION), function(p)
       as.numeric(terra::values(calc_mort(serie[c("tmean", "tmin", "tmax")], res$budswelling, res[[p]]))[, 1]))
+    M   <- do.call(cbind, mm)
+    ref <- as.numeric(terra::values(res$mortality)[, 1])
+    # fourchette definie seulement si la mortalite du package ET les 3 modeles sont definis
+    # (avec "first", le package renvoie NA des qu'un des 3 modeles d'eclosion est NA un jour donne)
+    ok     <- !is.na(ref) & rowSums(is.na(M)) == 0
+    incoh  <- sum(xor(is.na(ref), rowSums(is.na(M)) > 0))
+    if (incoh > 0)
+      message("::notice::PHENTHAU fourchette de mortalite : ", incoh, " maille(s) avec NA incoherents entre le package et les 3 modeles : fourchette non calculee pour ces mailles")
     if (def_hatch == "first") {
       # controle : l'eclosion la plus precoce donne la mortalite la plus forte, donc la mortalite
       # du package ("first") doit etre egale au maximum des 3 modeles
-      ref <- as.numeric(terra::values(res$mortality)[, 1])
-      mx  <- do.call(pmax, c(unname(mm), na.rm = TRUE))
-      if (!isTRUE(all(mx == ref | (is.na(mx) & is.na(ref)))))
-        stop("max des 3 modeles different de la mortalite du package (", sum(mx != ref, na.rm = TRUE), " mailles)")
+      ecart <- sum(ok & do.call(pmax, c(unname(as.data.frame(M)), na.rm = TRUE)) != ref)
+      if (ecart > 0) stop("max des 3 modeles different de la mortalite du package (", ecart, " mailles)")
     }
+    M[!ok, ] <- NA_real_
+    mm <- lapply(stats::setNames(seq_along(MODELES_ECLOSION), MODELES_ECLOSION), function(k) M[, k])
     mm
   }, error = function(e) { message("::warning::PHENTHAU fourchette de mortalite ignoree : ", conditionMessage(e)); NULL })
   list(res = res, dates = dates, annee = annee, date_ref = max(dates), mort_modeles = mort_modeles)
@@ -307,7 +315,7 @@ produire_geojson_mortalite <- function(pheno, ras, dir_out = DIR_OUT) {
     for (p in MODELES_ECLOSION) v[[paste0("mort_", p, "_pct")]] <- tab[[p]][k]
     v$mort_min_pct <- tab$mn[k]
     v$mort_max_pct <- tab$mx[k]
-    v$fourchette <- ifelse(is.na(v$mort_min_pct), "a determiner",
+    v$fourchette <- ifelse(is.na(v$mort_min_pct), ifelse(v$ordre == 0L, "a determiner", "non disponible"),
                            ifelse(v$mort_min_pct == v$mort_max_pct, sprintf("%g %%", v$mort_max_pct),
                                   sprintf("%g - %g %%", v$mort_min_pct, v$mort_max_pct)))
     v$cle <- NULL
@@ -319,7 +327,7 @@ produire_geojson_mortalite <- function(pheno, ras, dir_out = DIR_OUT) {
   v$label   <- CLASSES_MORTALITE$label[i]
   v$couleur <- CLASSES_MORTALITE$couleur[i]
   if (a_fourchette) {
-    v$survol <- ifelse(v$ordre == 0L, v$label,
+    v$survol <- ifelse(v$ordre == 0L | is.na(v$mort_min_pct), v$label,
                        paste0(v$label, " (fourchette 3 modeles d'eclosion : ", v$fourchette, ")"))
     v$source_mortalite <- SOURCES_MORTALITE
   }
