@@ -25,6 +25,14 @@ on:
         description: "Diagnostic seul : teste PHENTHAUproc (chene) sur 2 petites zones SAFRAN, ecrit data/diag/, sans modeles"
         type: boolean
         default: false
+      test_phenthau:
+        description: "Test PHENTHAU sur 2 petites emprises (Alsace-Vosges, Toulouse), annees 2023-2025 : ecrit data/diag/phenthau_test, sans modeles"
+        type: boolean
+        default: false
+      test_amont:
+        description: "Test du fetch SAFRAN amont national (sept-dec N-1) pour PHENTHAU : ecrit un bilan dans data/diag, sans modeles"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # commit + push des GeoJSON
@@ -123,16 +131,30 @@ jobs:
         run: Rscript R/construire_masques.R
 
       # PHENTHAUproc (CRAN, R >= 4.1) : installe uniquement pour le diagnostic, hors packages des 4 modeles
-      - name: Installer PHENTHAUproc (diagnostic chene uniquement)
-        if: ${{ inputs.diagnostic_phenthau }}
+      - name: Installer PHENTHAUproc (diagnostic / test chene uniquement)
+        if: ${{ inputs.diagnostic_phenthau || inputs.test_phenthau }}
         run: Rscript -e 'install.packages("PHENTHAUproc"); stopifnot(requireNamespace("PHENTHAUproc", quietly = TRUE))'
 
       - name: Diagnostic PHENTHAUproc (mode diagnostic uniquement)
         if: ${{ inputs.diagnostic_phenthau }}
         run: Rscript R/diag_phenthau.R
 
+      - name: Test PHENTHAU petite emprise (mode test uniquement)
+        if: ${{ inputs.test_phenthau }}
+        env:
+          PHENTHAU_TEST_EMPRISE: "987929,6754449,1051929,6818449;542008,6247127,606008,6311127"
+          PHENTHAU_TEST_ANNEES: "2023,2024,2025"
+          PHENTHAU_DIR_OUT: data/diag/phenthau_test
+        run: Rscript R/pipeline_phenthau.R
+
+      - name: Test fetch SAFRAN amont national (mode test uniquement)
+        if: ${{ inputs.test_amont }}
+        run: |
+          Rscript R/fetch_safran_amont.R
+          Rscript R/diag_phenthau_amont.R
+
       - name: Publier diagnostic / masques (data/diag, data/masques)
-        if: ${{ inputs.diagnostic_bdforet || inputs.construire_masques || inputs.diagnostic_phenthau }}
+        if: ${{ inputs.diagnostic_bdforet || inputs.construire_masques || inputs.diagnostic_phenthau || inputs.test_phenthau || inputs.test_amont }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -149,30 +171,30 @@ jobs:
           exit 1
 
       - name: 1. Recuperation SAFRAN partagee (une seule fois pour les 4 modeles)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/fetch_safran.R
 
       - name: 2. PHENIPS (Ips typographus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/pipeline_phenips.R
 
       - name: 3. CHAPY (Pityogenes chalcographus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/pipeline_chapy.R
 
       - name: 4. STENO (Ips sexdentatus)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/pipeline_steno.R
 
       - name: 5. Monochamus galloprovincialis (bivoltisme A + B)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: Rscript R/pipeline_monochamus.R
 
       # [P15] -A : prend aussi en compte les fichiers SUPPRIMES (purge des anciens
       # fichiers dates). Retry : si un autre commit est arrive entre-temps,
       # on se rebase dessus puis on repousse.
       - name: 6. Publier les GeoJSON (commit unique)
-        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
+        if: ${{ !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -192,7 +214,7 @@ jobs:
 
       # [P15] Notification d'echec : un ticket ouvert (ou commente s'il existe deja)
       - name: Signaler l'echec par un ticket GitHub
-        if: ${{ failure() && !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau }}
+        if: ${{ failure() && !inputs.diagnostic_rayonnement && !inputs.diagnostic_bdforet && !inputs.construire_masques && !inputs.diagnostic_phenthau && !inputs.test_phenthau && !inputs.test_amont }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
