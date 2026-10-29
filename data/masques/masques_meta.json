@@ -6,7 +6,7 @@
     "xmin": 100000,
     "ymin": 6050000
   },
-  "date_construction": "2026-10-21",
+  "date_construction": "2026-10-29",
   "masques": [
     {
       "nom": "epicea",
@@ -19,6 +19,13 @@
       "n_mailles": 6355,
       "n_polygones": 108391,
       "filtre": "essence LIKE 'Pin%'"
+    },
+    {
+      "nom": "chene",
+      "n_mailles": 6995,
+      "n_polygones": 121633,
+      "filtre": "essence LIKE 'Ch%nes d%cidus'",
+      "date": "2026-10-29"
     }
   ]
 }
