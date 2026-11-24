@@ -1,7 +1,7 @@
 # =============================================================================
 # DIAGNOSTIC PHENTHAUproc (processionnaire du chene) -- ISOLE, rien n'est integre
 # -----------------------------------------------------------------------------
-# Lance par le workflow en mode "diagnostic_phenthau". Ne touche ni aux 4 modeles
+# Lance par le workflow en mode "diagnostic_phenthau". Ne touche pas aux autres modeles
 # ni aux GeoJSON publies : ecrit seulement dans data/diag/ (commite par le workflow).
 #   A. test du package sur ses donnees d'exemple (load_test)
 #   B. donnees SAFRAN journalieres sur 2 petites zones, 1 sept 2023 -> 30 sept 2025

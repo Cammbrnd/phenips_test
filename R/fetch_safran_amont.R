@@ -20,7 +20,7 @@ source("R/safran_common.R")
 ANNEE_N         <- ANNEE
 ANNEE           <- ANNEE_N - 1L
 DATE_DEB        <- as.Date(glue("{ANNEE}-09-01"))
-DATE_FIN_SAFRAN <- min(as.Date(glue("{ANNEE}-12-31")), Sys.Date() - 5)
+DATE_FIN_SAFRAN <- min(as.Date(glue("{ANNEE}-12-31")), Sys.Date() - DELAI_SAFRAN_JOURS)
 cat(glue(">> SAFRAN amont pour PHENTHAU : {DATE_DEB} -> {DATE_FIN_SAFRAN}\n\n"))
 
 recuperer_safran()

@@ -9,7 +9,7 @@
 # IMPORTANT : on telecharge systematiquement le SUPERSET des 4 variables
 # (T_Q, TINF_H_Q, TSUP_H_Q, SSI_Q), meme pour les modeles qui n'utilisent pas
 # le rayonnement (Monochamus). Cela permet un cache 100% partage entre les
-# 4 pipelines : un seul jeu de requetes API GeoSAS pour tous les modeles.
+# pipelines : un seul jeu de requetes API GeoSAS pour tous les modeles.
 #
 # v2 (controle qualite de couverture) :
 #   - dalles de 100 km (et non 200) avec recouvrement de 16 km ;
@@ -28,18 +28,25 @@ library(data.table)
 library(lubridate)
 
 # --- Periode (identique pour tous les modeles) ---
-# [historique] ANNEE_SAFRAN (variable d'environnement) force une annee passee ; sans elle,
-# comportement inchange : annee en cours, jusqu'a J-5. Une annee passee va jusqu'au 31/12.
+# [historique] ANNEE_SAFRAN (variable d'environnement) force une annee passee. Une annee
+# passee va jusqu'au 31/12.
+# Sans elle : l'annee traitee est celle du DERNIER JOUR SAFRAN DISPONIBLE (J-5), pas celle
+# du jour. Du 1er au 5 janvier, SAFRAN n'a pas encore le 1er janvier : on reste sur
+# l'annee qui vient de se terminer (carte de fin d'annee complete) au lieu de demander un
+# jour indisponible, et l'annee bascule des que J-5 tombe dans la nouvelle annee.
+# Pour ajouter l'annee ecoulee a l'historique : voir README, « Cloture annuelle ».
+DELAI_SAFRAN_JOURS <- 5L
 ANNEE_FORCEE <- suppressWarnings(as.integer(Sys.getenv("ANNEE_SAFRAN", "")))
-ANNEE    <- if (!is.na(ANNEE_FORCEE)) ANNEE_FORCEE else as.integer(format(Sys.Date(), "%Y"))
+ANNEE    <- if (!is.na(ANNEE_FORCEE)) ANNEE_FORCEE else
+              as.integer(format(Sys.Date() - DELAI_SAFRAN_JOURS, "%Y"))
 DATE_DEB <- as.Date(glue("{ANNEE}-01-01"))
-DATE_FIN_SAFRAN <- min(as.Date(glue("{ANNEE}-12-31")), Sys.Date() - 5)
-if (DATE_FIN_SAFRAN < DATE_DEB) DATE_FIN_SAFRAN <- DATE_DEB
+DATE_FIN_SAFRAN <- min(as.Date(glue("{ANNEE}-12-31")), Sys.Date() - DELAI_SAFRAN_JOURS)
+if (DATE_FIN_SAFRAN < DATE_DEB) DATE_FIN_SAFRAN <- DATE_DEB   # annee forcee dans le futur
 
 # --- API GeoSAS ---
 GEOSAS_URL  <- "https://api.geosas.fr/edr/collections/safran-isba/cube"
 GEOSAS_CRS  <- "EPSG:2154"
-GEOSAS_VARS <- "T_Q,TINF_H_Q,TSUP_H_Q,SSI_Q"   # superset partage par les 4 modeles
+GEOSAS_VARS <- "T_Q,TINF_H_Q,TSUP_H_Q,SSI_Q"   # superset partage par tous les modeles
 
 # --- Grille SAFRAN France metropolitaine (L93) ---
 FRANCE_XMIN <- 100000
@@ -59,7 +66,7 @@ CRS_WGS <- "EPSG:4326"
 # explicitement dans le workflow : SAFRAN_QC_STRICT: "false").
 SAFRAN_QC_STRICT <- !identical(tolower(Sys.getenv("SAFRAN_QC_STRICT", "true")), "false")
 
-# --- Repertoire de cache PARTAGE (un seul, pour les 4 modeles) ---
+# --- Repertoire de cache PARTAGE (un seul, pour tous les modeles) ---
 DIR_CACHE <- "data/cache_safran"
 dir.create(DIR_CACHE, showWarnings = FALSE, recursive = TRUE)
 

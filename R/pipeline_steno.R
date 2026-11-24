@@ -36,25 +36,22 @@ for (sc in names(SCENARIOS)) {
                  "{SCENARIOS[[sc]]$DJ_GEN} DJ\n"))
   steno <- modeliser_steno(meteo, exposition = "shaded",
                            par = modifyList(STENO, SCENARIOS[[sc]]))
+  # La date d'essaimage ne depend pas des seuils de developpement (critere de vol :
+  # Tmax > 18 C deux jours de suite) : la couche essaimage est donc identique pour les
+  # 3 scenarios et n'est ecrite que pour "moyen" (voir exporter_geojson).
   exporter_geojson(steno, pas_essaimage = 15, grille = FALSE, scenario = sc)
   rm(steno); gc()
 }
 
-copier_vers_nom_stable <- function(pattern, nom_stable) {
-  fichiers <- list.files(DIR_OUT, pattern = pattern, full.names = TRUE)
-  if (length(fichiers) == 0) return(invisible(NULL))
-  plus_recent <- fichiers[which.max(file.mtime(fichiers))]
-  file.copy(plus_recent, file.path(DIR_OUT, nom_stable), overwrite = TRUE)
-  cat(glue::glue("  Copie stable : {basename(plus_recent)} -> {nom_stable}\n"))
-}
+# Copies a nom stable (le plus recent = date du nom), puis purge : 4 dernieres dates.
 # Motifs stricts : "moyen" = fichiers sans suffixe (date AAAAMMJJ / annee AAAA)
+source("R/fichiers_dates.R")
 copier_vers_nom_stable("^steno_generations_[0-9]{8}\\.geojson$", "steno_generations_latest.geojson")
 copier_vers_nom_stable("^steno_essaimage_[0-9]{4}\\.geojson$",   "steno_essaimage_latest.geojson")
 for (sc in setdiff(names(SCENARIOS), "moyen")) {
   copier_vers_nom_stable(paste0("^steno_generations_", sc, "_[0-9]{8}\\.geojson$"),
                          paste0("steno_generations_", sc, "_latest.geojson"))
-  copier_vers_nom_stable(paste0("^steno_essaimage_", sc, "_[0-9]{4}\\.geojson$"),
-                         paste0("steno_essaimage_", sc, "_latest.geojson"))
 }
+purger_fichiers_dates_modele("steno", garder = 4L)
 
 cat("\n>> STENO termine.\n\n")

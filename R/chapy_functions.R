@@ -169,34 +169,12 @@ catg <- function(..., .envir = parent.frame()) {
 # 1. PARAMETRES GLOBAUX
 # =============================================================================
 
-CRS_L93 <- "EPSG:2154"
-CRS_WGS <- "EPSG:4326"
-
-ANNEE    <- as.integer(format(Sys.Date(), "%Y"))
-DATE_DEB <- as.Date(glue("{ANNEE}-01-01"))
-
-# SAFRAN : GeoSAS met a jour debut de chaque mois avec le mois precedent.
-# On prend le dernier jour du mois precedent comme date fin sure.
-# Ajustable manuellement : DATE_FIN <- as.Date("2026-03-31")
-DATE_FIN <- floor_date(Sys.Date(), "month") - 1
-
-# --- Grille SAFRAN France metropolitaine (L93) ---
-# IMPORTANT : coordonnees en entiers via formatC() -> evite "6e+06" dans URL
-FRANCE_XMIN <-  100000L
-FRANCE_XMAX <- 1200000L
-FRANCE_YMIN <- 6050000L
-FRANCE_YMAX <- 7150000L
-SAFRAN_RES  <-    8000L
-
-# Decoupage en dalles pour eviter les timeouts API (200 km = ~25 tuiles/cote)
-DALLE_KM <- 200L
-DALLE_M  <- DALLE_KM * 1000L
-
-# API GeoSAS
-GEOSAS_URL  <- "https://api.geosas.fr/edr/collections/safran-isba/cube"
-GEOSAS_CRS  <- "EPSG:2154"
-# CHAPY : T_Q (tmoy), TINF_H_Q (tmin), TSUP_H_Q (tmax) — pas de rayonnement
-GEOSAS_VARS <- "T_Q,TINF_H_Q,TSUP_H_Q"
+# Periode (ANNEE, DATE_DEB, DATE_FIN_SAFRAN), API GeoSAS, grille SAFRAN, dalles et
+# systemes de coordonnees : definis UNE seule fois dans R/safran_common.R (a sourcer
+# avant ce fichier). Les redefinir ici ecraserait l'annee traitee et la taille des
+# dalles (100 km dans safran_common.R).
+# DATE_FIN : fin de la serie SAFRAN, utilisee par les cartes/courbes de ce fichier.
+DATE_FIN <- DATE_FIN_SAFRAN
 
 # Seuils biologiques du Chalcographe
 SEUIL_VOL_TMAX <- 15.6   # Tmax >= 15.6 C -> vol printanier
@@ -207,10 +185,8 @@ SEUIL_DIAPAUSE <- 13.6   # Photopériode < 13.6 h -> diapause
 # aux traces du pipeline et cassent la lisibilite de la console.
 options(datatable.showProgress = FALSE)
 
-DIR_OUT   <- "data"
-DIR_CACHE <- file.path(DIR_OUT, "cache_safran")
-dir.create(DIR_OUT,   showWarnings = FALSE, recursive = TRUE)
-dir.create(DIR_CACHE, showWarnings = FALSE, recursive = TRUE)
+DIR_OUT   <- "data"   # le cache SAFRAN (DIR_CACHE) vient de safran_common.R
+dir.create(DIR_OUT, showWarnings = FALSE, recursive = TRUE)
 
 cat("=== CHAPY v4.1 — Pityogenes chalcographus — France entiere ===\n")
 cat("    Source meteo : API GeoSAS INRAE / SAFRAN\n")

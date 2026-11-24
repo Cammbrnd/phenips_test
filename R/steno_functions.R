@@ -20,7 +20,9 @@
 #                                                 Logan/Lactin) (p. 118)
 #   Constante thermique 1 generation  : 506 +/- 7 DJ (resultats et calcul des
 #                                                 generations, p. 118 ; le resume
-#                                                 et la synthese disent 517 DJ)
+#                                                 et la synthese disent 517 DJ,
+#                                                 de meme que le resume de l'article
+#                                                 publie ; on retient la these : 506)
 #                                       = installation des parents -> emergence
 #                                       des jeunes adultes
 #   Optimum de developpement          : 29 C (Logan/Lactin, p. 118)
@@ -55,14 +57,16 @@
 #       s'accompagner d'un piegeage de controle.
 #
 # -----------------------------------------------------------------------------
-# Source meteo : API OGC EDR GeoSAS INRAE  (identique au script PHENIPS)
+# Source meteo : API OGC EDR GeoSAS INRAE  (R/safran_common.R, partage par les modeles)
 #   URL        : https://api.geosas.fr/edr/collections/safran-isba/cube
 #   Variables  : T_Q (Tmoy), TINF_H_Q (Tmin), TSUP_H_Q (Tmax), SSI_Q (rayont.)
-#   Resolution : grille SAFRAN 8x8 km | mise a jour mensuelle, ~J-5
+#   Resolution : grille SAFRAN 8x8 km | mise a jour par lots, ~J-5
 #
-#   >> Le cache CSV est PARTAGE avec le script PHENIPS (meme dossier par defaut,
-#      meme requete, memes variables) : aucun retelechargement si tu as deja
-#      lance phenips_france_safran_v3.R sur la meme annee.
+#   >> Ce fichier ne contient que le modele STENO-DJ et ses exports. Le
+#      telechargement, le cache CSV et les rasters nationaux viennent de
+#      R/safran_common.R / R/fetch_safran.R (a sourcer AVANT ce fichier) : les
+#      parametres communs (ANNEE, DATE_DEB, DATE_FIN_SAFRAN, DALLES, RST_FRANCE...)
+#      ne sont volontairement PAS redefinis ici.
 #
 # Auteur      : CNPF / CRPF AuRA — aout 2026
 # =============================================================================
@@ -90,33 +94,13 @@ library(data.table)
 # 1. PARAMETRES GLOBAUX
 # =============================================================================
 
-# --- Periode ---
-ANNEE    <- as.integer(format(Sys.Date(), "%Y"))
-DATE_DEB <- as.Date(glue("{ANNEE}-01-01"))
-
-DATE_FIN_SAFRAN <- Sys.Date() - 5
-if (DATE_FIN_SAFRAN < DATE_DEB) DATE_FIN_SAFRAN <- DATE_DEB
-
-# --- API GeoSAS ---
-GEOSAS_URL  <- "https://api.geosas.fr/edr/collections/safran-isba/cube"
-GEOSAS_CRS  <- "EPSG:2154"
-GEOSAS_VARS <- "T_Q,TINF_H_Q,TSUP_H_Q,SSI_Q"
-
-# --- Grille SAFRAN France metropolitaine (L93) ---
-FRANCE_XMIN <- 100000
-FRANCE_XMAX <- 1200000
-FRANCE_YMIN <- 6050000
-FRANCE_YMAX <- 7150000
-SAFRAN_RES  <- 8000
-
-DALLE_KM <- 200
-DALLE_M  <- DALLE_KM * 1000
-
-CRS_L93 <- "EPSG:2154"
-CRS_WGS <- "EPSG:4326"
+# Periode (ANNEE, DATE_DEB, DATE_FIN_SAFRAN), API GeoSAS, grille SAFRAN, dalles et
+# systemes de coordonnees : definis UNE seule fois dans R/safran_common.R (sourcer
+# ce fichier avant celui-ci). Les redefinir ici ecraserait l'annee traitee (cf.
+# passage d'annee) et la taille des dalles.
 
 # -----------------------------------------------------------------------------
-# RAYONNEMENT : detection automatique de l'unite  [CORRECTION vs PHENIPS v3]
+# RAYONNEMENT : detection automatique de l'unite (outil de diagnostic)
 # -----------------------------------------------------------------------------
 # Doc SAFRAN : SSI_Q = "Rayonnement visible (cumul quotidien)" en J/cm2.
 # Ordres de grandeur ATTENDUS en J/cm2 pour un cumul journalier :
@@ -124,14 +108,10 @@ CRS_WGS <- "EPSG:4326"
 # soit en Wh/m2 (unite attendue par l'equation de temperature d'ecorce) :
 #     hiver ~ 550-1100        |   ete ~ 5500-7200
 #
-# /!\ Le script PHENIPS v3 supposait une mediane brute de ~15-25 "J/cm2" et un
-#     garde-fou SSI_CHECK_MAX = 50. Si l'API renvoie effectivement ~15-25, alors
-#     la valeur est en MJ/m2 (25 MJ/m2 = 2500 J/cm2) et le facteur 2.7778 est
-#     100x trop petit : l'effet du rayonnement sur la temperature sous ecorce
-#     devient ~0.06 C au lieu de ~5 C, donc PHENIPS tourne en pratique en mode
-#     "shaded". >> A verifier sur ton cache, voir diagnostiquer_rayonnement().
-#
-# On evite le probleme : l'unite est deduite de la magnitude observee.
+# Historique : l'ancien script PHENIPS v3 (remplace par R/safran_common.R) avait
+# un facteur de conversion douteux. Le facteur actuel (J/cm2 -> Wh/m2 = 10000/3600)
+# est celui de safran_common.R. diagnostiquer_rayonnement() verifie l'unite reelle
+# sur le cache : l'unite est deduite de la magnitude observee.
 detecter_facteur_rad <- function(mediane_brute) {
   # Retourne le facteur de conversion -> Wh/m2 et l'unite supposee
   if (is.na(mediane_brute) || mediane_brute <= 0) {
@@ -149,12 +129,9 @@ detecter_facteur_rad <- function(mediane_brute) {
   }
 }
 
-# --- Repertoires ---
+# --- Repertoire de sortie (le cache SAFRAN, DIR_CACHE, vient de safran_common.R) ---
 DIR_OUT   <- "data"
-# Cache PARTAGE avec les 3 autres modeles (voir safran_common.R)
-DIR_CACHE <- file.path(DIR_OUT, "cache_safran")
-dir.create(DIR_OUT,   showWarnings = FALSE, recursive = TRUE)
-dir.create(DIR_CACHE, showWarnings = FALSE, recursive = TRUE)
+dir.create(DIR_OUT, showWarnings = FALSE, recursive = TRUE)
 
 
 # =============================================================================
@@ -219,8 +196,9 @@ STENO <- list(
 # "sunny" reste disponible comme scenario de sensibilite (temperature sous
 # ecorce, hypothese non validee pour le pin). Voir le commentaire de temp_ecorce().
 #   1.00 = equation de Baier telle quelle (epicea, ecorce fine)  -> borne haute
-#   0.50 = hypothese de travail                                  -> ~+2 a +4 C
-#   0.20 = proche des mesures de phloeme de pin (+1 a +2 C)      -> borne basse
+#   0.50 = valeur intermediaire                                  -> ~+2 a +4 C
+#   0.20 = valeur retenue (defaut) : proche des mesures de
+#          phloeme de pin (+1 a +2 C)                            -> borne basse
 #   0.00 = equivalent a exposition="shaded"
 K_ECORCE <- 0.2   # [EXPERT] a calibrer sur sondes sous ecorce
 
@@ -257,12 +235,7 @@ cat(glue("  Cache      : {DIR_CACHE}/\n\n"))
 # 3. RASTER DE REFERENCE FRANCE (grille SAFRAN native, L93)
 # =============================================================================
 
-RST_FRANCE <- rast(
-  xmin = FRANCE_XMIN, xmax = FRANCE_XMAX,
-  ymin = FRANCE_YMIN, ymax = FRANCE_YMAX,
-  resolution = SAFRAN_RES, crs = CRS_L93
-)
-
+# RST_FRANCE (grille native) est defini dans R/safran_common.R
 cat(glue("  Raster France : {nrow(RST_FRANCE)}L x {ncol(RST_FRANCE)}C",
          " = {ncell(RST_FRANCE)} cellules\n"))
 cat(glue("  Dalles France : {nrow(DALLES)}\n\n"))
@@ -371,10 +344,10 @@ verifier_trous <- function(rst, seuil = 5) {
 #'   - Baier et al. 2007 (epicea, sunny) : +3 a +8 C.
 #'
 #' Il n'existe aucune equation publiee pour le phloeme de pin sous ecorce
-#' epaisse. K_ECORCE = 0.5 est donc une HYPOTHESE DE TRAVAIL qui place
-#' l'echauffement estival vers +2 a +4 C, entre les mesures nord-americaines
-#' et Baier. A calibrer avec des sondes sous ecorce (voir note en fin de
-#' fichier).
+#' epaisse. K_ECORCE = 0.2 (valeur par defaut) est donc une HYPOTHESE DE
+#' TRAVAIL proche des mesures nord-americaines (echauffement estival ~ +1 a
+#' +2 C) ; 0.5 donnerait ~ +2 a +4 C et 1.0 l'equation de Baier telle quelle.
+#' A calibrer avec des sondes sous ecorce (voir note en fin de fichier).
 #'
 #' Nuance importante : le stenographe SELECTIONNE activement les faces chaudes
 #' (face superieure des troncs abattus, faces SE plutot que NO — Jactel &
@@ -754,11 +727,16 @@ doy_vers_date <- function(doy, annee = ANNEE) {
 #' @param grille   TRUE = exporte aussi la grille SAFRAN complete (1 entite/maille)
 #' @param scenario "moyen" (noms de fichiers inchanges) ou "pire" / "moins_pire"
 #'        (suffixe ajoute : steno_generations_pire_AAAAMMJJ.geojson)
+#' @param essaimage TRUE = ecrit aussi la couche de date d'essaimage. Par defaut
+#'        seulement pour "moyen" : le critere de vol (Tmax > 18 C deux jours de suite)
+#'        ne depend pas des seuils de developpement, la couche est donc identique
+#'        pour les 3 scenarios.
 exporter_geojson <- function(steno,
                              dir_out        = DIR_OUT,
                              pas_essaimage  = 15,
                              grille         = TRUE,
-                             scenario       = "moyen") {
+                             scenario       = "moyen",
+                             essaimage      = (scenario == "moyen")) {
   cat(glue(">> Export GeoJSON (WGS84) — scenario {scenario}...\n"))
   date_j <- format(max(steno$dates), "%Y%m%d")
   sfx    <- if (scenario == "moyen") "" else paste0("_", scenario)
@@ -800,7 +778,9 @@ exporter_geojson <- function(steno,
   ons <- steno$onset
   vals <- values(ons)[, 1]
   
-  if (all(is.na(vals))) {
+  if (!essaimage) {
+    cat("  [SKIP] essaimage : identique pour tous les scenarios (ecrit avec 'moyen')\n")
+  } else if (all(is.na(vals))) {
     cat("  [SKIP] essaimage : aucun envol modelise a ce stade\n")
   } else {
     dmin <- floor(min(vals, na.rm = TRUE) / pas_essaimage) * pas_essaimage
@@ -1034,7 +1014,7 @@ synthese_console <- function(steno) {
 # =============================================================================
 
 #' Verifie l'unite reelle de SSI_Q dans le cache et l'impact sur la temperature
-#' sous ecorce. A lancer AUSSI pour auditer le script PHENIPS v3.
+#' sous ecorce (facteur de conversion de R/safran_common.R).
 diagnostiquer_rayonnement <- function(dalles = DALLES[1:min(5, nrow(DALLES)), ]) {
   fichiers <- chemin_cache(dalles$id)
   fichiers <- fichiers[file.exists(fichiers)]
@@ -1062,8 +1042,7 @@ diagnostiquer_rayonnement <- function(dalles = DALLES[1:min(5, nrow(DALLES)), ])
            "+{round(0.0008518 * med * conv$facteur, 2)} C\n"))
   cat("  Reference PHENIPS : l'echauffement attendu est de +3 a +8 C en ete.\n")
   cat("  Si tu obtiens < 0.5 C, le facteur de conversion est trop petit\n")
-  cat("  (c'est le cas si phenips_france_safran_v3.R utilise WHm2_FACTOR=2.7778\n")
-  cat("   sur des valeurs deja exprimees en MJ/m2).\n---\n\n")
+  cat("  (valeurs deja exprimees en MJ/m2 converties comme des J/cm2).\n---\n\n")
   invisible(conv)
 }
 
