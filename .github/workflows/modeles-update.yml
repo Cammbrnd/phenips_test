@@ -121,7 +121,7 @@ jobs:
           echo "::warning::renv.lock absent : versions des packages non figees (lancer R/init_renv.R en local)"
           Rscript -e '
             pkgs <- c("barrks","terra","httr2","ggplot2","tidyterra","lubridate",
-                      "glue","sf","scales","data.table","dplyr","jsonlite","PHENTHAUproc")
+                      "glue","sf","scales","data.table","dplyr","jsonlite","geosphere","PHENTHAUproc")
             # requireNamespace() CHARGE vraiment le package (dyn.load) : un binaire en cache
             # lie a des bibliotheques systeme anciennes est detecte et reinstalle.
             ok <- vapply(pkgs, function(p) suppressWarnings(requireNamespace(p, quietly = TRUE)), logical(1))
@@ -426,3 +426,20 @@ jobs:
             sleep 15
           done
           exit 1
+
+      # Un echec de calcul d'une annee (SAFRAN en retard, delai depasse...) ne doit pas passer inapercu,
+      # surtout pour la cloture annuelle automatique (cloture-annuelle.yml).
+      - name: Signaler l'echec d'une annee par un ticket GitHub
+        if: ${{ always() && needs.historique_annee.result != 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          titre="Echec du calcul de l'historique"
+          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          corps="Au moins une annee de l'historique n'a pas ete calculee (run du $(date -u +%Y-%m-%d)) : ${url}"
+          existant=$(gh issue list --state open --search "\"${titre}\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "${existant}" ]; then
+            gh issue comment "${existant}" --body "${corps}"
+          else
+            gh issue create --title "${titre}" --body "${corps}"
+          fi

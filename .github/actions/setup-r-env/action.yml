@@ -29,7 +29,7 @@ runs:
       run: |
         Rscript -e '
           pkgs <- c("barrks","terra","httr2","ggplot2","tidyterra","lubridate",
-                    "glue","sf","scales","data.table","dplyr","jsonlite")
+                    "glue","sf","scales","data.table","dplyr","jsonlite","geosphere")
           ok <- vapply(pkgs, function(p) suppressWarnings(requireNamespace(p, quietly = TRUE)), logical(1))
           if (!all(ok)) { cat("A (re)installer :", paste(pkgs[!ok], collapse = ", "), "\n"); install.packages(pkgs[!ok]) }
           ok <- vapply(pkgs, function(p) suppressWarnings(requireNamespace(p, quietly = TRUE)), logical(1))

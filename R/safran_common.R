@@ -524,23 +524,21 @@ assembler_rasters_nationaux <- function(dt) {
   rasters
 }
 
+# Duree du jour : fonction NATIVE de barrks (geosphere::daylength, modele CBM de Forsythe et al.
+# 1995, avec la correction de refraction/rayon solaire de 0.8333 degre), donc strictement
+# coherente avec la diapause calculee par barrks : fonction logistique de la duree du jour
+# et de Tmax pour PHENIPS-Clim (scenario "max", diapause thermique), seuil de 13.6 h pour CHAPY.
+# Le package geosphere est requis par barrks::create_daylength_rst() (dependance Suggests de barrks).
+# RST_FRANCE est une grille VIDE et barrks refuse un template sans valeurs : on en fait
+# une copie remplie de 1 (le template ne sert qu'a fournir l'emprise, la resolution et le CRS).
 calculer_daylength <- function(rst_ref, dates) {
-  cat(">> Calcul daylength (partage)...\n")
-  lats <- crds(rst_ref) |> as.data.frame() |>
-    vect(geom = c("x","y"), crs = CRS_L93) |> project(CRS_WGS) |>
-    crds() |> (\(m) m[, 2])()
-  duree <- function(lat_deg, doy) {
-    decl <- -asin(0.39779 * cos(pi/180 * (0.98563*(doy+10) + 1.914*sin(pi/180 * 0.98563*(doy-2)))))
-    cos_ha <- pmin(pmax(-tan(lat_deg*pi/180) * tan(decl), -1), 1)
-    2 * acos(cos_ha) * 12 / pi
-  }
-  couches <- lapply(seq_along(dates), function(i) {
-    r <- rst_ref
-    values(r) <- duree(lats, yday(dates[i]))
-    names(r) <- as.character(dates[i])
-    r
-  })
-  rst <- rast(couches)
-  time(rst) <- dates
+  cat(">> Calcul daylength (barrks::create_daylength_rst, partage)...\n")
+  if (!requireNamespace("geosphere", quietly = TRUE))
+    stop("package 'geosphere' requis par barrks::create_daylength_rst()")
+  dates <- as.Date(dates)
+  tpl <- rst_ref[[1]]
+  values(tpl) <- 1
+  rst <- barrks::create_daylength_rst(template = tpl, dates = dates, .quiet = TRUE)
+  names(rst) <- as.character(dates)
   rst
 }

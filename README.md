@@ -17,7 +17,8 @@ directement sur GitHub.
 ## Arborescence
 
 ```
-.github/workflows/modeles-update.yml   workflow unique (cron hebdomadaire + lancements manuels)
+.github/workflows/modeles-update.yml   workflow principal (cron hebdomadaire + lancements manuels)
+.github/workflows/cloture-annuelle.yml  lance l'historique de l'année écoulée le 8 janvier
 
 R/
   safran_common.R          période, contrôle qualité et cache SAFRAN, constantes partagées
@@ -74,14 +75,17 @@ Déploiement de l'app : `rsconnect::deployApp("app")`.
 ## Clôture annuelle
 
 Au 1er janvier, les cartes repartent de zéro (chaque année est calculée de janvier à décembre,
-sans lien avec la précédente). Pour **ajouter l'année écoulée N-1 à l'historique** :
+sans lien avec la précédente). L'**année écoulée N-1 est ajoutée automatiquement à l'historique le
+8 janvier** (06h17 UTC) par `cloture-annuelle.yml`, qui lance le workflow principal avec
+`historique` coché et `annee_debut` = `annee_fin` = N-1. Les autres années de l'historique sont
+conservées, et l'app règle ses curseurs d'après les années présentes dans la table (elle garde les
+tables en mémoire jusqu'au redémarrage de son processus). En cas d'échec (SAFRAN en retard, délai
+dépassé), un ticket GitHub est ouvert.
 
-1. Attendre que SAFRAN dispose du 31 décembre (autour du 6 janvier : décalage de 5 jours).
-2. Onglet Actions → « Mise à jour des modèles (GeoJSON) » → *Run workflow*, case `historique`
-   cochée, `annee_debut` = `annee_fin` = N-1 (par exemple 2026 et 2026).
-3. Le job d'assemblage commite `data/historique/*.csv.gz` : l'année N-1 s'ajoute, les autres sont
-   conservées. L'app règle ses curseurs d'après les années présentes dans la table (elle garde les
-   tables en mémoire jusqu'au redémarrage de son processus).
+À la main (ou pour reprendre après un échec) : onglet Actions → « Mise à jour des modèles
+(GeoJSON) » → *Run workflow*, case `historique` cochée, `annee_debut` = `annee_fin` = N-1, une fois
+que SAFRAN dispose du 31 décembre (vers le 5 janvier : décalage de 5 jours). Le workflow
+« Cloture annuelle de l'historique » accepte aussi un lancement manuel, avec l'année en option.
 
 Autour du changement d'année, le run hebdomadaire reste sur l'année qui se termine tant que J-5
 tombe dans cette année : le run du lundi 4 janvier 2027 traite encore 2026 (données jusqu'au
@@ -98,6 +102,14 @@ quelques jours plus tard.
   bivoltisme A » mais n'en affiche que le stade (légende et survol sur le champ `label`). La
   correction (extraction cellule par cellule) est à faire. Le bivoltisme B
   (`mono_bivoltB_gen2_*`) n'est pas concerné.
+- **Longueur du jour** : `calculer_daylength()` (`R/safran_common.R`) appelle
+  `barrks::create_daylength_rst()` (`geosphere::daylength`, avec correction de réfraction), la même
+  fonction que barrks pour la diapause (seuil de 13,6 h pour CHAPY ; pour PHENIPS-Clim en scénario
+  `max`, diapause thermique fonction de la durée du jour et de Tmax). `geosphere` est donc requis (il
+  est installé par le workflow). La formule maison utilisée avant était 7 à 14 min plus courte : le
+  seuil de CHAPY était franchi 4 à 5 jours trop tôt (pour PHENIPS-Clim, l'écart équivaut à 0,2-0,4 °C sur Tmax). Les
+  tables de l'historique calculées avec l'ancienne formule sont à recalculer pour PHENIPS et CHAPY
+  (STENO n'est pas concerné : `DL_INIT_MIN = 0`), sinon l'année en cours n'est pas comparable.
 - **STENO** : les GeoJSON portent un champ `couleur` pré-calculé, utilisé tel quel par l'app.
 - **Premier run plus lent** : le cache SAFRAN et le cache de packages R se remplissent une
   première fois.
