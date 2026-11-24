@@ -9,7 +9,8 @@
 
 suppressPackageStartupMessages(library(sf))
 annee <- suppressWarnings(as.integer(Sys.getenv("ANNEE_SAFRAN", "")))
-if (is.na(annee) || annee != as.integer(format(Sys.Date(), "%Y"))) {
+# annee des cartes de production = annee du dernier jour SAFRAN disponible (J-5), cf. safran_common.R
+if (is.na(annee) || annee != as.integer(format(Sys.Date() - 5, "%Y"))) {
   cat("Validation ignoree : pas une annee en cours.\n"); quit(status = 0)
 }
 

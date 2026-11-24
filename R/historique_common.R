@@ -6,8 +6,8 @@
 # du masque d'essence (v3) avec donnees SAFRAN.
 #   gen_<scenario> : nombre de generations au 31/12 (ou a la derniere date si annee en cours)
 #   doy_<scenario> : jour de l'annee du premier envol / essaimage (vide si aucun)
-# A sourcer APRES safran_common.R et le fichier de fonctions du modele (ces derniers
-# redefinissent ANNEE, d'ou la reaffectation ci-dessous).
+# A sourcer APRES safran_common.R et le fichier de fonctions du modele. ANNEE est
+# reaffectee ci-dessous par securite (ANNEE_SAFRAN fait deja foi dans safran_common.R).
 # =============================================================================
 
 ANNEE_H <- suppressWarnings(as.integer(Sys.getenv("ANNEE_SAFRAN", "")))

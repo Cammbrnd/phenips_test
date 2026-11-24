@@ -1,108 +1,120 @@
-# Mise en prod mutualisée — PHENIPS, CHAPY, STENO, Monochamus
+# Phénologie des ravageurs forestiers : cartes SAFRAN
 
-## Arborescence finale du repo (remplace complètement l'ancienne)
+Cartes nationales (mailles SAFRAN de 8 km, Lambert-93) du développement thermique de cinq
+ravageurs. Les données météo viennent de SAFRAN (Météo-France) via GeoSAS (INRAE), avec un
+décalage d'environ 5 jours. Un workflow GitHub Actions calcule les cartes chaque lundi
+(05h00 UTC) et publie des GeoJSON dans `data/` ; l'app Shiny/leaflet (`app/app.R`) les lit
+directement sur GitHub.
+
+| Modèle | Espèce | Masque d'essence | Implémentation |
+|---|---|---|---|
+| PHENIPS-Clim | *Ips typographus* | épicéa | package **barrks** (`phenology()`) |
+| CHAPY | *Pityogenes chalcographus* | épicéa | package **barrks** (`phenology()`) |
+| STENO-DJ | *Ips sexdentatus* | pins | interne (règles de Pineau et al.) |
+| Monochamus | *Monochamus galloprovincialis* | aucun | interne |
+| PHENTHAU | *Thaumetopoea processionea* | chênes décidus | package **PHENTHAUproc** |
+
+## Arborescence
 
 ```
-.github/workflows/
-  modeles-update.yml          <- remplace phenips-update.yml (a supprimer)
+.github/workflows/modeles-update.yml   workflow principal (cron hebdomadaire + lancements manuels)
+.github/workflows/cloture-annuelle.yml  lance l'historique de l'année écoulée le 8 janvier
 
 R/
-  safran_common.R             <- fonctions partagees (telechargement/cache/assemblage)
-  fetch_safran.R               <- etape unique de recuperation SAFRAN
+  safran_common.R          période, contrôle qualité et cache SAFRAN, constantes partagées
+  fetch_safran.R           récupération SAFRAN de l'année (-> data/cache_meteo/meteo_national.rds)
+  fetch_safran_amont.R     SAFRAN septembre-décembre N-1 (PHENTHAU)
+  fichiers_dates.R         copie vers les noms stables *_latest et purge des fichiers datés
+  masques.R, construire_masques.R   masques d'essence (BD Forêt IGN)
+  <modele>_functions.R     modèle + export GeoJSON (phenips, chapy, steno, monochamus, phenthau)
+  pipeline_<modele>.R      pilote de chaque modèle
+  historique_*.R, assembler_historique.R, valider_historique.R   historique 1960+
+  diag_*.R, init_renv.R    diagnostics ; figement des versions de packages (renv)
 
-  phenips_functions.R          <- modele + export GeoJSON PHENIPS (deja allege)
-  pipeline_phenips.R           <- driver PHENIPS (charge le jeu partage)
+app/app.R                  app Shiny multi-modèles
 
-  chapy_functions.R            <- modele + export GeoJSON CHAPY (deja allege)
-  pipeline_chapy.R             <- driver CHAPY
-
-  steno_functions.R            <- modele + export GeoJSON STENO (deja allege)
-  pipeline_steno.R             <- driver STENO (grille desactivee -> 2 fichiers)
-
-  monochamus_functions.R       <- modele + export GeoJSON Monochamus (allege +
-                                   patche : bivoltisme A ajoute au fichier stade)
-  pipeline_monochamus.R        <- driver Monochamus
-
-app/
-  app.R                        <- app Shiny multi-modeles (selecteur)
-
-data/                          <- genere automatiquement par le workflow
-  cache_safran/                <- cache CSV partage (a mettre dans .gitignore)
-  cache_meteo/                 <- rasters nationaux assembles (a mettre dans .gitignore)
-  phenips_generations_latest.geojson
-  phenips_onset_latest.geojson
-  chapy_generations_latest.geojson
-  chapy_envol_latest.geojson
-  steno_generations_latest.geojson
-  steno_essaimage_latest.geojson
-  mono_stade_latest.geojson          (porte aussi le bivoltisme A)
-  mono_bivoltB_gen2_latest.geojson   (bivoltisme B)
+data/                      généré par le workflow
+  <modele>_..._latest.geojson      noms stables lus par l'app
+  <modele>_..._AAAAMMJJ.geojson    fichiers datés (les 4 dernières dates)
+  masques/  historique/  diag/
+  cache_safran/  cache_meteo/      dans .gitignore
 ```
 
-## .gitignore a ajouter/completer a la racine
+## Fonctionnement
+
+- **Calendrier** : cron le lundi à 05h00 UTC, ou *Run workflow* à la main (onglet Actions,
+  workflow « Mise à jour des modèles (GeoJSON) »). Le premier run est long (téléchargement
+  complet de SAFRAN, timeout du job : 180 min) ; les suivants s'appuient sur le cache.
+- **Année traitée** : celle du dernier jour SAFRAN disponible (J-5), du 1er janvier à J-5. La
+  variable `ANNEE_SAFRAN` force une année passée (historique). Voir « Clôture annuelle ».
+- **Un processus par modèle**, lancé depuis la racine du dépôt, comme dans le workflow. Chaque
+  `pipeline_<modele>.R` charge `R/safran_common.R` puis son fichier `<modele>_functions.R`.
+- **Fichiers de sortie** : chaque pipeline écrit un fichier daté `nom_AAAAMMJJ.geojson`, le
+  copie vers `nom_latest.geojson` (le fichier de date la plus récente *dans son nom*, pas la
+  date de modification), puis ne garde que les **4 dates les plus récentes** par type de
+  fichier. Les suppressions sont publiées avec le commit du workflow. Cas particuliers :
+  Monochamus ajoute `_WGS84` au nom daté ; l'essaimage STENO est un fichier par année
+  (`steno_essaimage_AAAA.geojson`, non purgé).
+- **Publication** : un commit unique pour PHENIPS, CHAPY, STENO et Monochamus (étape 6) ; PHENTHAU
+  vient après, dans un commit séparé et en `continue-on-error` (étapes 7 à 9). Un échec ouvre un
+  ticket GitHub automatique.
+
+### Reprise en local
 
 ```
-data/cache_safran/
-data/cache_meteo/
+Rscript R/fetch_safran.R            # SAFRAN -> data/cache_meteo/meteo_national.rds
+Rscript R/pipeline_phenips.R        # puis pipeline_chapy.R, pipeline_steno.R, pipeline_monochamus.R
+Rscript R/fetch_safran_amont.R      # PHENTHAU : SAFRAN sept-déc N-1
+Rscript R/pipeline_phenthau.R
+shiny::runApp("app")                # l'app lit les fichiers sur GitHub (UTILISATEUR_GH / REPO_GH / BRANCHE_GH)
 ```
 
-## Etapes de mise en route
+Les masques d'essence (`data/masques/`) doivent exister (voir « v3 : masques d'essence »).
+Déploiement de l'app : `rsconnect::deployApp("app")`.
 
-1. **Pousser tous les fichiers ci-dessus** dans le repo `phenips_test`
-   (remplacer l'ancien `.github/workflows/phenips-update.yml` par
-   `modeles-update.yml`, supprimer l'ancien si tu veux faire le menage).
+## Clôture annuelle
 
-2. **Verifier chaque `xxx_functions.R` en le sourçant en local** avant de
-   lancer sur GitHub Actions :
-   ```r
-   source("R/safran_common.R")
-   source("R/phenips_functions.R")     # doit se sourcer sans erreur, sans rien lancer
-   source("R/chapy_functions.R")
-   source("R/steno_functions.R")
-   source("R/monochamus_functions.R")
-   ```
-   Si l'un des quatre plante au sourcing, c'est probablement une fonction
-   encore appelee mais supprimee par erreur — regarde le message d'erreur,
-   il indiquera le nom de la fonction introuvable.
+Au 1er janvier, les cartes repartent de zéro (chaque année est calculée de janvier à décembre,
+sans lien avec la précédente). L'**année écoulée N-1 est ajoutée automatiquement à l'historique le
+8 janvier** (06h17 UTC) par `cloture-annuelle.yml`, qui lance le workflow principal avec
+`historique` coché et `annee_debut` = `annee_fin` = N-1. Les autres années de l'historique sont
+conservées, et l'app règle ses curseurs d'après les années présentes dans la table (elle garde les
+tables en mémoire jusqu'au redémarrage de son processus). En cas d'échec (SAFRAN en retard, délai
+dépassé), un ticket GitHub est ouvert.
 
-3. **Test complet en local** (optionnel mais rassurant avant de lancer sur
-   Actions) :
-   ```r
-   source("R/safran_common.R")
-   source("R/fetch_safran.R")          # telecharge + sauvegarde data/cache_meteo/meteo_national.rds
-   source("R/phenips_functions.R"); source("R/pipeline_phenips.R")
-   source("R/chapy_functions.R");   source("R/pipeline_chapy.R")
-   source("R/steno_functions.R");   source("R/pipeline_steno.R")
-   source("R/monochamus_functions.R"); source("R/pipeline_monochamus.R")
-   ```
-   Tu dois voir apparaitre les 8 GeoJSON dans `data/`.
+À la main (ou pour reprendre après un échec) : onglet Actions → « Mise à jour des modèles
+(GeoJSON) » → *Run workflow*, case `historique` cochée, `annee_debut` = `annee_fin` = N-1, une fois
+que SAFRAN dispose du 31 décembre (vers le 5 janvier : décalage de 5 jours). Le workflow
+« Cloture annuelle de l'historique » accepte aussi un lancement manuel, avec l'année en option.
 
-4. **Sur GitHub** : onglet **Actions** -> workflow "Mise a jour des 4 modeles
-   (GeoJSON)" -> **Run workflow** (test manuel avant de compter sur le cron).
-   Prevoir un premier run plus long (~30-60 min : telechargement complet +
-   4 modelisations), les suivants seront plus rapides grace aux caches.
-
-5. **App Shiny** : `UTILISATEUR_GH`/`REPO_GH`/`BRANCHE_GH` sont deja remplis
-   avec tes valeurs (`Cammbrnd`/`phenips_test`/`main`). Teste en local :
-   ```r
-   shiny::runApp("app")
-   ```
-   Puis deploie :
-   ```r
-   rsconnect::deployApp("app")
-   ```
+Autour du changement d'année, le run hebdomadaire reste sur l'année qui se termine tant que J-5
+tombe dans cette année : le run du lundi 4 janvier 2027 traite encore 2026 (données jusqu'au
+30 décembre) ; les cartes passent à 2027 dès que J-5 est en 2027 (run du 11 janvier). Un retard
+de SAFRAN de plus de 5 jours (rare) peut faire échouer le contrôle qualité : relancer le workflow
+quelques jours plus tard.
 
 ## Points de vigilance
 
-- **STENO** : ses GeoJSON portent un champ `couleur` pre-calcule (comme
-  PHENIPS/CHAPY) ; l'app l'utilise tel quel et en tire la legende.
-- **Le patch bivoltisme A** dans `monochamus_functions.R` extrait les valeurs
-  par centroide de polygone (pas cellule par cellule) : sur de tres grandes
-  zones dissoutes, une petite perte de precision locale est possible aux
-  bordures. Acceptable pour un indicateur de risque annuel, mais a garder en
-  tete si tu compares avec le raster brut.
-- **Premier run plus lent** que les suivants : le cache SAFRAN et le cache de
-  packages R doivent se remplir une premiere fois.
+- **Monochamus, bivoltisme A** : `mono_stade_*.geojson` porte `risque_bivoltA` et `dj10_projete`,
+  extraits **au centroïde des polygones de stade**. Ces polygones regroupent les mailles par classe
+  de stade : on obtient une valeur par polygone (4 polygones, donc 4 valeurs), pas une valeur par
+  maille. Ces champs ne sont pas exploitables maille par maille. L'app nomme la couche « Stade +
+  bivoltisme A » mais n'en affiche que le stade (légende et survol sur le champ `label`). La
+  correction (extraction cellule par cellule) est à faire. Le bivoltisme B
+  (`mono_bivoltB_gen2_*`) n'est pas concerné.
+- **Longueur du jour** : `calculer_daylength()` (`R/safran_common.R`) appelle
+  `barrks::create_daylength_rst()` (`geosphere::daylength`, avec correction de réfraction), la même
+  fonction que barrks pour la diapause (seuil de 13,6 h pour CHAPY ; pour PHENIPS-Clim en scénario
+  `max`, diapause thermique fonction de la durée du jour et de Tmax). `geosphere` est donc requis (il
+  est installé par le workflow). La formule maison utilisée avant était 7 à 14 min plus courte : le
+  seuil de CHAPY était franchi 4 à 5 jours trop tôt (pour PHENIPS-Clim, l'écart équivaut à 0,2-0,4 °C sur Tmax). Les
+  tables de l'historique calculées avec l'ancienne formule sont à recalculer pour PHENIPS et CHAPY
+  (STENO n'est pas concerné : `DL_INIT_MIN = 0`), sinon l'année en cours n'est pas comparable.
+- **STENO** : les GeoJSON portent un champ `couleur` pré-calculé, utilisé tel quel par l'app.
+- **Premier run plus lent** : le cache SAFRAN et le cache de packages R se remplissent une
+  première fois.
+- **Redéploiement de l'app** : à refaire après toute modification de `app/app.R`. Ne passer
+  `COMPAT_ANCIENS_NOMS` à `FALSE` qu'ensuite (voir PHENIPS).
 
 ## PHENIPS v2 : scenarios, controle qualite, sources
 
@@ -117,24 +129,29 @@ data/cache_meteo/
 
 - `sunny` = ecorce exposee au sud, `shaded` = ecorce a l'ombre (scenario `max`
   de barrks dans les deux cas). Aucun des deux n'est systematiquement le pire cas :
-  au-dela de 38.9 C le developpement PHENIPS s'arrete, et une ecorce exposee au sud
-  depasse souvent ce seuil en ete. Sur les donnees d'octobre 2026, le scenario a l'ombre
-  donne en general une generation de plus que le scenario au soleil.
+  PHENIPS-Clim lit des taux de developpement tabules selon la temperature moyenne de
+  l'ecorce et l'amplitude journaliere (`params("phenips-clim")$dev_rates`), nuls au-dela
+  d'environ 30 a 36 C selon l'amplitude. Une ecorce exposee au sud atteint souvent ces
+  valeurs en ete, si bien que `shaded` peut donner plus de generations que `sunny` : c'est
+  le cas en 2026 (environ 3,5 contre 2,6 generations, moyenne ponderee par la surface,
+  donnees du 18/11/2026). Sur 1960-2025, `sunny` donne autant ou plus dans 94 % des
+  mailles-annees. (Le seuil de 38.9 C est celui de PHENIPS, pas de PHENIPS-Clim.)
 - `COMPAT_ANCIENS_NOMS <- TRUE` (phenips_functions.R) recopie aussi le scenario
   `sunny` vers les anciens noms `phenips_generations_latest.geojson` et
-  `phenips_onset_latest.geojson`, le temps de redeployer l'app. A passer a `FALSE`
-  ensuite, puis supprimer ces deux fichiers.
+  `phenips_onset_latest.geojson`, le temps de redeployer l'app. Apres le redeploiement de
+  l'app (`app/app.R` ne les lit plus), passer a `FALSE`, puis supprimer ces deux fichiers.
 - Les anciens fichiers dates `phenips_*_AAAAMMJJ.geojson` sont purges : on garde
-  les 4 dates les plus recentes par type de fichier. Un `*_latest` est toujours
-  la copie du fichier ecrit pendant le run (jamais d'un fichier plus ancien) ;
-  si la couche n'a pas pu etre produite, le `latest` est supprime.
+  les 4 dates les plus recentes par type de fichier (meme regle pour tous les modeles,
+  voir « Fonctionnement »). Un `*_latest` est toujours la copie du fichier ecrit pendant
+  le run (jamais d'un fichier plus ancien) ; si la couche n'a pas pu etre produite, le
+  `latest` est supprime.
 - **Que compte une « generation » ?** `get_generations_rst(threshold = 0)` compte les generations
   *presentes* (documentation barrks : « how many generations are present »), c'est-a-dire dont le
   developpement a commence ; elles ne sont pas forcement achevees. Les libelles sont donc `Gen. 3`,
   `Gen. 3 + couvee soeur`, sans « achevee ». L'avancement reel est donne par l'indice continu
   (somme des developpements des generations filiales, plafonnes a 1).
-- Les cartes montrent un **potentiel thermique de developpement**, sans masque
-  d'epicea ni masque du territoire.
+- Les cartes montrent un **potentiel thermique de developpement**, calcule sur les mailles qui
+  croisent de l'epicea (masque v3, voir plus bas).
 
 ### Controle qualite SAFRAN (R/safran_common.R, R/fetch_safran.R)
 
@@ -162,7 +179,9 @@ et affiche un avertissement.
 - Donnees meteorologiques : **Meteo-France** (reanalyse SAFRAN-ISBA), distribuees par
   **GeoSAS (INRAE)**. La mention figure dans l'app, dans `phenips_meta.json` et dans le
   champ `source` des GeoJSON PHENIPS.
-- Modele : PHENIPS (Baier et al. 2007), implementation du package R **barrks**.
+- Modele : PHENIPS-Clim, implementation du package R **barrks** (Jentschke 2025). PHENIPS-Clim
+  n'est pas encore publie et a ete parametre pour le sud de l'Allemagne (documentation de barrks) ;
+  les equations de temperature d'ecorce viennent de Baier et al. 2007 (PHENIPS).
 - Licence du depot : **Licence Ouverte 2.0 (Etalab)**, concedant : Departement de la sante
   des forets (DSF) ; voir le fichier `LICENSE`. La mention « Source : Meteo-France » doit
   etre conservee en cas de reutilisation.
@@ -173,16 +192,23 @@ et affiche un avertissement.
 (2016) : temperature de l'air, 506 DJ au-dessus de 10.9 C, debut d'activite quand
 Tmax > 18 C deux jours de suite, ni maturation ni arret photoperiodique. Les
 generations sont des **maxima thermiques**, pas une prediction validee.
-Trois scenarios reprennent les marges d'erreur de la these :
+Trois scenarios reprennent les marges d'erreur de la these de Pineau :
 
 | Scenario | Seuil | Constante | Fichiers `latest` |
 |---|---|---|---|
 | `moyen` (reference) | 10.9 C | 506 DJ | `steno_generations_latest.geojson`, `steno_essaimage_latest.geojson` |
-| `pire` (rapide) | 10.7 C | 499 DJ | `steno_*_pire_latest.geojson` |
-| `moins_pire` (lent) | 11.1 C | 513 DJ | `steno_*_moins_pire_latest.geojson` |
+| `pire` (rapide) | 10.7 C | 499 DJ | `steno_generations_pire_latest.geojson` |
+| `moins_pire` (lent) | 11.1 C | 513 DJ | `steno_generations_moins_pire_latest.geojson` |
 
-L'app propose ces trois scenarios dans un selecteur. Les fichiers `pire` et `moins_pire`
-n'existent qu'apres le premier run du workflow.
+L'app propose ces trois scenarios dans un selecteur (« marges d'erreur de la these »).
+
+- **Constante de 506 DJ** : valeur de la these. Le resume de l'article (Agric. Forest Entomol.
+  19:23-33) donne 517 DJ avec le meme seuil de 10.9 C ; les deux valeurs sont publiees, le depot
+  retient la these (506).
+- **Essaimage** : le critere de vol (Tmax > 18 C deux jours de suite) ne depend pas des seuils de
+  developpement ; les trois scenarios donnent donc les memes dates (`doy_*` identiques dans
+  l'historique). La couche « Essaimage » est unique (`steno_essaimage_latest.geojson`,
+  et `steno_essaimage_AAAA.geojson` par annee), commune aux trois scenarios.
 
 ### CHAPY : classes de generations
 
@@ -212,14 +238,15 @@ l'essence-hôte** :
   désigne les peuplements purs ; l'épicéa présent dans un peuplement classé « Mélange de
   conifères » ou « Conifères » n'est pas visible. Les masques sont donc plutôt prudents.
 - Les masques sont **construits à la demande** (la BD Forêt change peu) : onglet Actions →
-  « Mise à jour des 4 modèles » → *Run workflow* avec `construire_masques` coché. Le workflow
+  « Mise à jour des modèles (GeoJSON) » → *Run workflow* avec `construire_masques` coché. Le workflow
   commite `data/masques/`. Les pipelines s'arrêtent avec un message clair si un masque manque.
 - Monochamus n'est pas masqué.
 
-## Historique 1960-2025 : générations et premier envol par maille
+## Historique (1960 → année écoulée) : générations et premier envol par maille
 
 Table annuelle, pour chaque maille SAFRAN (8 km) masquée par l'essence-hôte (cf. v3), du
-**nombre de générations** et de la **date du premier envol** de 1960 à 2025.
+**nombre de générations** et de la **date du premier envol**, de 1960 à la dernière année
+clôturée (voir « Clôture annuelle »).
 
 | Modèle | Fichier | Colonnes (hors `annee`, `x`, `y`) |
 |---|---|---|
@@ -244,18 +271,20 @@ couvertes et le nombre de mailles.
 - Chaque année est calculée de janvier à décembre, **sans lien avec l'année précédente** (même
   hypothèse que les cartes de l'année en cours).
 - Mêmes scénarios, mêmes masques et même contrôle qualité SAFRAN que les cartes de l'année en
-  cours. L'année en cours n'est pas incluse (elle est incomplète).
+  cours. L'année en cours n'est pas incluse (elle est incomplète) : elle est ajoutée à la
+  clôture annuelle.
 - Source météo : SAFRAN (Météo-France) via GeoSAS INRAE ; la série GeoSAS démarre en août 1958,
   d'où le début à 1960 (années civiles complètes).
 
 ### Reconstruire la table
 
-Onglet Actions → « Mise à jour des 4 modèles » → *Run workflow* avec `historique` coché
+Onglet Actions → « Mise à jour des modèles (GeoJSON) » → *Run workflow* avec `historique` coché
 (`annee_debut`, `annee_fin`, `parallele` réglables). Un job par année (5 en parallèle par défaut,
 pour ne pas surcharger GeoSAS), puis un job d'assemblage qui commite `data/historique/`.
 Les années recalculées remplacent les anciennes lignes ; les autres sont conservées.
-Le calcul complet 1960-2025 prend environ 6 h (≈ 16 min par année, 5 en parallèle ; la première
-exécution est plus longue car elle installe les packages R, ensuite mis en cache). Si un job reste
+Le calcul complet 1960-2025 prend environ 3 h 30 en théorie (≈ 16 min par année × 66 années ÷ 5 en
+parallèle) ; la première exécution est plus longue car elle installe les packages R, ensuite mis en
+cache. Ajouter une seule année prend le temps d'un job (≈ 16 min). Si un job reste
 bloqué (déjà vu une fois à l'installation de R), « Re-run failed jobs » relance uniquement l'année
 en cause : les autres résultats sont conservés. Le job
 `historique_diag` (case `historique_diag`) sonde GeoSAS (étendue temporelle, durée des requêtes)
@@ -264,7 +293,7 @@ sans rien calculer.
 Pour l'année en cours, `R/valider_historique.R` compare l'extraction par maille aux GeoJSON de
 production (annotations `VALIDATION` du job).
 
-### Onglet « Historique 1960-2025 » de l'app
+### Onglet « Historique » de l'app
 
 Carte d'une année (curseur animable), moyenne sur une période, ou tendance par décennie
 (régression linéaire maille par maille, grisage des tendances non significatives à p > 0,05) ;
@@ -273,19 +302,19 @@ L'app ne fait que lire les tables du dépôt (aucun calcul lourd).
 
 ## PHENTHAU : processionnaire du chêne (*Thaumetopoea processionea*)
 
-5e modèle, package CRAN **PHENTHAUproc** (Halbig et al. 2024, *Forest Ecol. Manag.* 552:121525),
+Cinquième modèle, package CRAN **PHENTHAUproc** (Halbig et al. 2024, *Forest Ecol. Manag.* 552:121525),
 mode régional `dailymeanminmax` : températures **journalières** SAFRAN (`T_Q`, `TINF_H_Q`,
 `TSUP_H_Q`), sans reconstruction horaire.
 
 - **Calcul** : `R/pipeline_phenthau.R` (fonctions dans `R/phenthau_functions.R`), à la suite des
-  4 autres modèles dans `modeles-update.yml` (étapes 7 à 9, `continue-on-error` : un échec
-  PHENTHAU ne bloque pas les 4 modèles, déjà publiés, et ouvre le ticket d'échec).
+  autres modèles dans `modeles-update.yml` (étapes 7 à 9, `continue-on-error` : un échec
+  PHENTHAU ne bloque pas les autres modèles, déjà publiés, et ouvre le ticket d'échec).
 - **Données amont** : le package compte les jours de froid depuis le **1er septembre N-1**.
   `R/fetch_safran_amont.R` récupère septembre-décembre N-1 (même contrôle qualité que le fetch
   partagé, cache `safran_v2_*_<N-1>.csv`, sortie `data/cache_meteo/meteo_amont.rds`) ; le fetch
   partagé (1er janvier N) n'est pas modifié.
 - **Sorties** (`data/`) : `phenthau_{stades,l3,eclosion,debourrement,mortalite}_<date>.geojson`
-  (+ `_latest`), `phenthau_meta.json`. GeoTIFF L93 (22 bandes par maille : jours de l'année des stades, mortalités) et PNG
+  (+ `_latest`), `phenthau_meta.json`. GeoTIFF L93 (22 bandes par maille : jours de l'année des stades et mortalités) et PNG
   nationaux : artefact `phenthau-rasters` du run (30 jours), non commités. Champs GeoJSON :
   `espece`, `modele = "PHENTHAU"`, `couleur`, `label`, `date_iso`, `avertissement`.
 - **Éclosion** : `DEF_ECLOSION = "first"` (la plus précoce des 3 modèles : Custers, Wagenhoff,
@@ -319,9 +348,11 @@ mode régional `dailymeanminmax` : températures **journalières** SAFRAN (`T_Q`
   échoue avec `custers` ou `wagenhoff` seuls (vecteurs temps différents) ; le pipeline appelle donc
   la fonction interne `calc_mortality()` avec les sorties de `phenthau()`.
 - **Limite d'applicabilité** : calibré sur *Quercus robur* en Allemagne, jusqu'à 800 m. Hors de ce
-  domaine (sud de la France, montagne), c'est une extrapolation : au sud-ouest, l'éclosion
-  (Meurisse) précède de 3 à 4 semaines le débourrement et la mortalité L1 dépasse 50 % sur presque
-  toutes les mailles. À lire comme un indicateur, pas comme une prévision validée.
+  domaine (sud de la France, montagne), c'est une extrapolation. Sur la zone test de Toulouse,
+  l'éclosion (Meurisse) précède de 3 à 4 semaines le débourrement et la mortalité L1 atteint ou
+  dépasse 50 % sur 56 à 59 mailles sur 64 selon le modèle d'éclosion. À l'échelle nationale (données
+  du 30/09/2026), environ 37 % de la surface est dans les classes de mortalité 60-90 % et ≥ 90 %.
+  À lire comme un indicateur, pas comme une prévision validée.
 - **Tests** (entrées *Run workflow*) : `diagnostic_phenthau`, `test_phenthau` (2 petites emprises,
   2023-2025, `def_eclosion` first/mean), `test_amont` (fetch amont national, bilan dans
   `data/diag/`), `masques=chene` avec `construire_masques`.

@@ -169,34 +169,12 @@ catg <- function(..., .envir = parent.frame()) {
 # 1. PARAMETRES GLOBAUX
 # =============================================================================
 
-CRS_L93 <- "EPSG:2154"
-CRS_WGS <- "EPSG:4326"
-
-ANNEE    <- as.integer(format(Sys.Date(), "%Y"))
-DATE_DEB <- as.Date(glue("{ANNEE}-01-01"))
-
-# SAFRAN : GeoSAS met a jour debut de chaque mois avec le mois precedent.
-# On prend le dernier jour du mois precedent comme date fin sure.
-# Ajustable manuellement : DATE_FIN <- as.Date("2026-03-31")
-DATE_FIN <- floor_date(Sys.Date(), "month") - 1
-
-# --- Grille SAFRAN France metropolitaine (L93) ---
-# IMPORTANT : coordonnees en entiers via formatC() -> evite "6e+06" dans URL
-FRANCE_XMIN <-  100000L
-FRANCE_XMAX <- 1200000L
-FRANCE_YMIN <- 6050000L
-FRANCE_YMAX <- 7150000L
-SAFRAN_RES  <-    8000L
-
-# Decoupage en dalles pour eviter les timeouts API (200 km = ~25 tuiles/cote)
-DALLE_KM <- 200L
-DALLE_M  <- DALLE_KM * 1000L
-
-# API GeoSAS
-GEOSAS_URL  <- "https://api.geosas.fr/edr/collections/safran-isba/cube"
-GEOSAS_CRS  <- "EPSG:2154"
-# CHAPY : T_Q (tmoy), TINF_H_Q (tmin), TSUP_H_Q (tmax) — pas de rayonnement
-GEOSAS_VARS <- "T_Q,TINF_H_Q,TSUP_H_Q"
+# Periode (ANNEE, DATE_DEB, DATE_FIN_SAFRAN), API GeoSAS, grille SAFRAN, dalles et
+# systemes de coordonnees : definis UNE seule fois dans R/safran_common.R (a sourcer
+# avant ce fichier). Les redefinir ici ecraserait l'annee traitee et la taille des
+# dalles (100 km dans safran_common.R).
+# DATE_FIN : fin de la serie SAFRAN, utilisee par les cartes/courbes de ce fichier.
+DATE_FIN <- DATE_FIN_SAFRAN
 
 # Seuils biologiques du Chalcographe
 SEUIL_VOL_TMAX <- 15.6   # Tmax >= 15.6 C -> vol printanier
@@ -207,10 +185,8 @@ SEUIL_DIAPAUSE <- 13.6   # Photopériode < 13.6 h -> diapause
 # aux traces du pipeline et cassent la lisibilite de la console.
 options(datatable.showProgress = FALSE)
 
-DIR_OUT   <- "data"
-DIR_CACHE <- file.path(DIR_OUT, "cache_safran")
-dir.create(DIR_OUT,   showWarnings = FALSE, recursive = TRUE)
-dir.create(DIR_CACHE, showWarnings = FALSE, recursive = TRUE)
+DIR_OUT   <- "data"   # le cache SAFRAN (DIR_CACHE) vient de safran_common.R
+dir.create(DIR_OUT, showWarnings = FALSE, recursive = TRUE)
 
 cat("=== CHAPY v4.1 — Pityogenes chalcographus — France entiere ===\n")
 cat("    Source meteo : API GeoSAS INRAE / SAFRAN\n")
@@ -260,57 +236,14 @@ cat("  [INFO] Relancer 1 fois/mois apres le 5 du mois.\n\n")
 #' via as.matrix() puis extraction de LIGNES par indexation numerique standard,
 #' vectorisee en un seul bloc (plus rapide qu'une boucle en plus d'etre juste).
 # =============================================================================
-# 6. DUREE DU JOUR (via barrks natif — correction v3 [1])
+# 6. DUREE DU JOUR
 # =============================================================================
-
-#' CORRECTION v3 [1] : remplace calculer_daylength() (formule maison) par
-#' create_daylength_rst() de barrks, qui garantit la coherence exacte avec
-#' les calculs internes de CHAPY (meme algorithme astronomique).
-#'
-#' CORRECTION v3.4 (signature CONFIRMEE par l'utilisateur en local) :
-#' args(create_daylength_rst) donne :
-#'   function(template, dates = terra::time(template), crs = "EPSG:4258",
-#'            .quiet = FALSE)
-#' Ca confirme le diagnostic v3.3 : le raster de reference est bien le
-#' PREMIER argument (nomme `template`, pas `rst`), `dates` est le second.
-#' Appel desormais fait par arguments nommes pour plus de robustesse et de
-#' lisibilite (protege contre un futur changement d'ordre dans barrks).
-#'
-#' Note sur `crs` (defaut "EPSG:4258", ETRS89) : ce parametre precise le
-#' systeme geographique utilise en interne pour calculer les latitudes
-#' (reprojection automatique depuis le CRS de `template`, ici L93). ETRS89
-#' et WGS84 donnent des latitudes quasi identiques (ecart de l'ordre du
-#' centimetre) -> aucun impact mesurable sur la photoperiode calculee, pas
-#' besoin de le surcharger pour la France.
-#'
-#' Le fallback ci-dessous est conserve par securite (defense en profondeur)
-#' mais ne devrait plus jamais se declencher avec la signature confirmee.
-calculer_daylength_manuel <- function(rst_ref, dates) {
-  lats <- crds(rst_ref) |>
-    as.data.frame() |>
-    vect(geom = c("x", "y"), crs = CRS_L93) |>
-    project(CRS_WGS) |>
-    crds() |>
-    (\(m) m[, 2])()
-  
-  duree <- function(lat_deg, doy) {
-    decl   <- -asin(0.39779 * cos(pi/180 * (0.98563*(doy+10) +
-                                              1.914*sin(pi/180 * 0.98563*(doy-2)))))
-    cos_ha <- pmin(pmax(-tan(lat_deg*pi/180) * tan(decl), -1), 1)
-    2 * acos(cos_ha) * 12 / pi
-  }
-  
-  couches <- lapply(seq_along(dates), function(i) {
-    r         <- rst_ref
-    values(r) <- duree(lats, yday(dates[i]))
-    names(r)  <- as.character(dates[i])
-    r
-  })
-  
-  rst       <- rast(couches)
-  time(rst) <- dates
-  rst
-}
+# calculer_daylength() (R/safran_common.R) appelle barrks::create_daylength_rst()
+# (geosphere::daylength), la meme fonction que celle utilisee en interne par barrks
+# pour la diapause (seuil CHAPY : 13.6 h ; PHENIPS-Clim : fonction de la duree du jour et de Tmax). Template : RST_FRANCE est une grille vide
+# et barrks refuse un template sans valeurs, d'ou la copie remplie de 1 dans
+# calculer_daylength(). L'ancienne formule maison (sans correction de refraction, 7 a
+# 14 min plus courte) a ete supprimee.
 
 
 # =============================================================================

@@ -53,35 +53,10 @@ library(data.table)   # lecture CSV rapide
 # 1. PARAMETRES GLOBAUX
 # =============================================================================
 
-# --- Periode ---
-ANNEE    <- as.integer(format(Sys.Date(), "%Y"))
-DATE_DEB <- as.Date(glue("{ANNEE}-01-01"))
-
-# SAFRAN : donnees disponibles jusqu'a ~J-5
-# On interroge jusqu'a hier pour etre sur d'avoir des donnees completes
-DATE_FIN_SAFRAN <- Sys.Date() - 5
-if (DATE_FIN_SAFRAN < DATE_DEB) DATE_FIN_SAFRAN <- DATE_DEB
-
-# --- API GéoSAS ---
-GEOSAS_URL  <- "https://api.geosas.fr/edr/collections/safran-isba/cube"
-GEOSAS_CRS  <- "EPSG:2154"
-GEOSAS_VARS <- "T_Q,TSUP_H_Q,TINF_H_Q"  # Tmoy, Tmax, Tmin
-
-# --- Grille SAFRAN France metropolitaine (L93) ---
-# Emprise approx. metropole en L93
-FRANCE_XMIN <- 100000
-FRANCE_XMAX <- 1200000
-FRANCE_YMIN <- 6050000
-FRANCE_YMAX <- 7150000
-SAFRAN_RES  <- 8000        # 8 km
-
-# Decoupage en dalles pour eviter les timeouts API
-# 200 km = 25 tuiles SAFRAN par cote -> ~625 tuiles par dalle
-DALLE_KM    <- 200
-DALLE_M     <- DALLE_KM * 1000
-
-CRS_L93 <- "EPSG:2154"
-CRS_WGS <- "EPSG:4326"
+# Periode (ANNEE, DATE_DEB, DATE_FIN_SAFRAN), API GeoSAS, grille SAFRAN, dalles et
+# systemes de coordonnees : definis UNE seule fois dans R/safran_common.R (a sourcer
+# avant ce fichier). Les redefinir ici ecraserait l'annee traitee et la taille des
+# dalles (100 km dans safran_common.R).
 
 # --- Parametres biologiques ---
 PARAM_MONO <- list(
@@ -95,11 +70,9 @@ PARAM_MONO <- list(
   date_limite_gen2 = "10-01"
 )
 
-# --- Repertoires ---
+# --- Repertoire de sortie (le cache SAFRAN, DIR_CACHE, vient de safran_common.R) ---
 DIR_OUT   <- "data"
-DIR_CACHE <- file.path(DIR_OUT, "cache_safran")
-dir.create(DIR_OUT,   showWarnings = FALSE, recursive = TRUE)
-dir.create(DIR_CACHE, showWarnings = FALSE, recursive = TRUE)
+dir.create(DIR_OUT, showWarnings = FALSE, recursive = TRUE)
 
 cat("=== Monochamus galloprovincialis — France metropolitaine (SAFRAN) ===\n")
 cat(glue("  Periode     : {DATE_DEB} -> {DATE_FIN_SAFRAN}\n"))

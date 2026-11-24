@@ -22,15 +22,11 @@ pheno <- modeliser_chapy(meteo, mode = "max")
 produire_geojson_generations_chapy(pheno)
 produire_geojson_envol_chapy(pheno)
 
-# Copies a nom stable pour lecture par l'app Shiny (meme logique que phenips)
-copier_vers_nom_stable <- function(pattern, nom_stable) {
-  fichiers <- list.files(DIR_OUT, pattern = pattern, full.names = TRUE)
-  if (length(fichiers) == 0) return(invisible(NULL))
-  plus_recent <- fichiers[which.max(file.mtime(fichiers))]
-  file.copy(plus_recent, file.path(DIR_OUT, nom_stable), overwrite = TRUE)
-  cat(glue::glue("  Copie stable : {basename(plus_recent)} -> {nom_stable}\n"))
-}
-copier_vers_nom_stable("^chapy_generations_.*\\.geojson$", "chapy_generations_latest.geojson")
-copier_vers_nom_stable("^chapy_onset_.*\\.geojson$",        "chapy_onset_latest.geojson")
+# Copies a nom stable pour lecture par l'app Shiny (le plus recent = date du nom),
+# puis purge : on garde les 4 dernieres dates (R/fichiers_dates.R)
+source("R/fichiers_dates.R")
+copier_vers_nom_stable("^chapy_generations_[0-9]{8}\\.geojson$", "chapy_generations_latest.geojson")
+copier_vers_nom_stable("^chapy_onset_[0-9]{8}\\.geojson$",        "chapy_onset_latest.geojson")
+purger_fichiers_dates_modele("chapy", garder = 4L)
 
 cat("\n>> CHAPY termine.\n\n")

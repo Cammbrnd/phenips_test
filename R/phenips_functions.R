@@ -38,10 +38,14 @@ dir.create(DIR_OUT, showWarnings = FALSE, recursive = TRUE)
 SOURCE_DONNEES <- paste0("Source : Meteo-France (donnees SAFRAN) via GeoSAS INRAE ; ",
                          "modele PHENIPS-Clim (package barrks)")
 
-# Deux scenarios d'exposition. Aucun n'est "le pire cas" partout : l'ecorce
-# exposee au sud depasse souvent 38.9 C en ete (seuil au-dela duquel PHENIPS
-# arrete le developpement), si bien que "shaded" peut donner PLUS de generations
-# que "sunny" (octobre 2026 : environ une generation de plus a l'ombre).
+# Deux scenarios d'exposition. Aucun n'est "le pire cas" partout : PHENIPS-Clim
+# lit des taux de developpement tabules selon la temperature MOYENNE de l'ecorce et
+# l'amplitude journaliere (barrks : params("phenips-clim")$dev_rates), nuls au-dela
+# d'environ 30 a 36 C selon l'amplitude (le seuil de 38.9 C est celui de PHENIPS,
+# pas de PHENIPS-Clim). L'ecorce exposee au sud atteint souvent ces valeurs en ete,
+# si bien que "shaded" peut donner PLUS de generations que "sunny" : c'est le cas en
+# 2026 (~3.5 contre ~2.6 generations, moyenne ponderee par la surface), mais sur
+# 1960-2025 "sunny" donne autant ou plus dans 94 % des mailles-annees.
 VARIANTES_PHENIPS <- list(
   sunny  = list(exposure = "sunny",  scenario = "max", libelle = "Ecorce exposee au sud"),
   shaded = list(exposure = "shaded", scenario = "max", libelle = "Ecorce a l'ombre")

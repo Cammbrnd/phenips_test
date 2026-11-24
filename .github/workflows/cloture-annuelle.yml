@@ -1,0 +1,53 @@
+name: Cloture annuelle de l'historique
+
+# Le 8 janvier, calcule l'annee ecoulee (N-1) et l'ajoute a data/historique/ en lancant le
+# workflow "Mise a jour des modeles (GeoJSON)" avec historique=true. C'est exactement la
+# procedure manuelle decrite dans le README (section "Cloture annuelle"), sans rien changer
+# d'autre : les autres annees de l'historique sont conservees.
+# SAFRAN a un decalage d'environ 5 jours : le 31 decembre est disponible vers le 5 janvier.
+
+on:
+  schedule:
+    - cron: "17 6 8 1 *"   # 8 janvier, 06h17 UTC (le fichier est lu sur la branche par defaut)
+  workflow_dispatch:
+    inputs:
+      annee:
+        description: "Annee a calculer (AAAA). Vide = annee precedente"
+        type: string
+        default: ""
+
+permissions:
+  actions: write   # lancer le workflow de mise a jour
+  contents: read
+  issues: write    # ticket si le lancement echoue
+
+jobs:
+  cloture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Lancer le calcul historique de l'annee ecoulee
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANNEE_DEMANDEE: ${{ inputs.annee }}
+        run: |
+          annee="${ANNEE_DEMANDEE:-$(( $(date -u +%Y) - 1 ))}"
+          [[ "$annee" =~ ^[0-9]{4}$ && "$annee" -ge 1959 ]] || { echo "::error::annee invalide : $annee"; exit 1; }
+          echo "Cloture de l'annee ${annee}"
+          gh workflow run modeles-update.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
+            -f historique=true -f annee_debut="$annee" -f annee_fin="$annee" -f parallele=1
+
+      - name: Signaler l'echec par un ticket GitHub
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          titre="Echec de la cloture annuelle de l'historique"
+          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          corps="Le lancement automatique du $(date -u +%Y-%m-%d) a echoue : ${url}. Lancer a la main le workflow de mise a jour avec historique coche (voir README, Cloture annuelle)."
+          existant=$(gh issue list --state open --search "\"${titre}\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "${existant}" ]; then
+            gh issue comment "${existant}" --body "${corps}"
+          else
+            gh issue create --title "${titre}" --body "${corps}"
+          fi

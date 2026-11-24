@@ -46,10 +46,13 @@ MODELES <- list(
     label     = "PHENIPS-Clim (Ips typographus)",
     variantes = c("Ecorce exposee au sud" = "sunny", "Ecorce a l'ombre" = "shaded"),
     meta      = "phenips_meta.json",
+    label_variante = "Scenario d'exposition",
     aide      = paste("Aucun des deux scenarios n'est systematiquement le plus defavorable :",
-                      "une ecorce exposee au sud depasse souvent 38.9 C en ete, seuil au-dela",
-                      "duquel le developpement s'arrete (PHENIPS). En annee chaude, le scenario",
-                      "a l'ombre peut donc donner autant, voire plus, de generations."),
+                      "dans PHENIPS-Clim le developpement s'arrete quand la temperature moyenne de",
+                      "l'ecorce depasse environ 30 a 36 C (selon l'amplitude journaliere), ce qui",
+                      "arrive souvent en ete pour une ecorce exposee au sud. En annee chaude (2026),",
+                      "le scenario a l'ombre peut donc donner autant, voire plus, de generations ;",
+                      "sur 1960-2025, le scenario au soleil donne le plus souvent autant ou plus."),
     avertissement = paste("Une generation est comptee des qu'elle est presente (developpement",
                           "commence), pas forcement achevee : l'indice continu donne l'avancement.",
                           "Potentiel thermique theorique : seules les mailles de 8 km qui croisent au moins",
@@ -82,10 +85,13 @@ MODELES <- list(
     variantes = c("Moyen (reference)" = "moyen", "Pire (developpement rapide)" = "pire",
                   "Moins pire (developpement lent)" = "moins_pire"),
     sans_suffixe = "moyen",
-    aide      = paste("Les trois scenarios reprennent les marges d'erreur publiees (seuil",
-                      "10.9 +/- 0.2 C ; 506 +/- 7 DJ par generation). Elles sont etroites :",
+    label_variante = "Scenario (marges d'erreur de la these)",
+    aide      = paste("Les trois scenarios reprennent les marges d'erreur de la these de Pineau",
+                      "(seuil 10.9 +/- 0.2 C ; 506 +/- 7 DJ par generation). Elles sont etroites :",
                       "elles ne couvrent ni la temperature sous ecorce, ni la maturation,",
-                      "ni la photoperiode, ni la variabilite d'une annee a l'autre."),
+                      "ni la photoperiode, ni la variabilite d'une annee a l'autre.",
+                      "La couche Essaimage est identique pour les trois scenarios (le critere de",
+                      "vol ne depend pas de ces seuils)."),
     avertissement = paste("Generations = MAXIMA THERMIQUES (temperature de l'air, hotes toujours",
                           "disponibles, pas d'arret photoperiodique). Indicateur d'aide a la decision,",
                           "pas une prediction validee : a confronter a un piegeage de controle.",
@@ -93,7 +99,7 @@ MODELES <- list(
                           "(BD Foret IGN) sont affichees."),
     couches = list(
       list(nom = "Generations", fichier = "steno_generations_{variante}_latest.geojson", champ_label = "libelle"),
-      list(nom = "Essaimage",   fichier = "steno_essaimage_{variante}_latest.geojson",   champ_label = "libelle")
+      list(nom = "Essaimage",   fichier = "steno_essaimage_latest.geojson",              champ_label = "libelle")
     )
   ),
   phenthau = list(
@@ -285,7 +291,7 @@ ui <- fluidPage(
       leafletOutput("carte", height = "68vh")
     ),
     tabPanel(
-      "Historique 1960-2025",
+      "Historique",
       fluidRow(
         column(3,
           selectInput("h_modele", "Modele",
@@ -317,8 +323,9 @@ ui <- fluidPage(
   tags$p(
     style = "font-size: 11px; color: #6c757d; margin: 6px 0 12px 0;",
     paste("Source : Meteo-France (donnees SAFRAN), via GeoSAS INRAE ; essences : IGN, BD Foret V2.",
-          "Modeles : PHENIPS-Clim (package barrks, Jentschke 2025 ; PHENIPS : Baier et al. 2007),",
-          "CHAPY (Ogris et al. 2020) ; STENO-DJ (Pineau et al. 2016) et Monochamus : modeles internes fondes sur la litterature.",
+          "Modeles : PHENIPS-Clim (package barrks, Jentschke 2025 ; equations de temperature d'ecorce : Baier et al. 2007),",
+          "CHAPY (Ogris et al. 2020), PHENTHAU (package PHENTHAUproc, Halbig et al. 2024) ;",
+          "STENO-DJ (Pineau et al. 2016) et Monochamus : modeles internes fondes sur la litterature.",
           "Les cartes representent un potentiel de developpement thermique theorique,",
           "pas une observation de terrain.")
   )
@@ -385,7 +392,7 @@ server <- function(input, output, session) {
     m <- MODELES[[input$modele]]
     if (length(m$variantes) == 0) return(if (is.null(m$aide)) NULL else helpText(m$aide))   # PHENTHAU : aide sans scenario
     tagList(
-      radioButtons("variante", "Scenario d'exposition",
+      radioButtons("variante", if (is.null(m$label_variante)) "Scenario" else m$label_variante,
                    choices = m$variantes, selected = unname(m$variantes[1])),
       helpText(m$aide)
     )
@@ -532,7 +539,7 @@ server <- function(input, output, session) {
 
   # Chargement a la demande : seulement quand l'onglet est ouvert
   table_h <- reactive({
-    req(input$onglet == "Historique 1960-2025")
+    req(input$onglet == "Historique")
     lire_table_h(req(input$h_modele))
   })
 
